@@ -70,7 +70,7 @@ window.RJ = window.RJ || {};
     RJ.D4FX.forEach(f => { params[f.id] = f.def.slice(); });
     return {
       format: "dcx404", v: 1,
-      vol: 0.8, inLevel: 0.7, sendRj: 1, send950: 1, vel: "soft", bpm: 90, roll: 3, padLevel: new Array(PADS).fill(0.8),
+      vol: 0.8, inLevel: 0.8, sendRj: 1, send950: 1, vel: "soft", bpm: 90, roll: 3, padLevel: new Array(PADS).fill(0.8),
       bus: 1, fx: { 1: null, 2: null }, mfx: "reverb", params,
       hold: false, mute: false, cur: 0,
       pads: new Array(PADS).fill(null).map(newPad),
