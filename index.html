@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>DCX 404 Performance Sampler</title>
+  <meta name="description" content="DCX 404: sampler de performance no navegador, com 16 pads, 9 efeitos ao vivo e reamostragem. Projeto open source da DCX Audio.">
+  <meta name="theme-color" content="#1c1c1c">
+  <link rel="stylesheet" href="vendor/dcx-core/css/base.css">
+  <link rel="stylesheet" href="vendor/dcx-core/css/solo.css">
+  <link rel="stylesheet" href="css/dcx404.css">
+</head>
+<body>
+  <div class="power" id="power">
+    <button class="power-btn" id="power-btn" type="button">
+      <span class="power-ring"></span>
+      <span class="power-label">LIGAR</span>
+    </button>
+    <p class="power-hint">DCX 404 &middot; DCX Audio<br>Toque para ligar o som</p>
+  </div>
+
+  <main class="solo">
+    <div class="solo-top">
+      <h1 class="solo-title">DCX 404 &middot; DCX Audio</h1>
+      <div id="learnbar"></div>
+    </div>
+
+    <div class="d4-scroll">
+    <section class="d4" id="d4" aria-label="DCX 404 Performance Sampler">
+      <i class="d4-hole" style="left:12px;top:10px"></i><i class="d4-hole" style="right:12px;top:10px"></i>
+      <i class="d4-hole" style="left:12px;bottom:10px"></i><i class="d4-hole" style="right:12px;bottom:10px"></i>
+
+      <div class="d4-top">
+        <div class="r9-brand"><span class="r9-maker">DCX</span><span class="r9-sub">Performance Sampler</span></div>
+        <span class="r9-model">404</span>
+      </div>
+
+      <div class="d4-knobs">
+        <div class="d4-vol"><div class="knob r9-control" data-ctrl="volume" role="slider" tabindex="0" aria-label="Volume"><i></i></div><span class="r9-cap">Volume</span></div>
+        <div class="r42-group d4-fx"><span class="r42-gt">FX Control</span>
+          <div class="kc"><div class="knob" data-ctrl="ctrl-1" role="slider" tabindex="0" aria-label="Ctrl 1"><i></i></div><span class="r9-cap">Ctrl 1<br><span class="r42-dim" data-cap="1">&nbsp;</span></span></div>
+          <div class="kc"><div class="knob" data-ctrl="ctrl-2" role="slider" tabindex="0" aria-label="Ctrl 2"><i></i></div><span class="r9-cap">Ctrl 2<br><span class="r42-dim" data-cap="2">&nbsp;</span></span></div>
+          <div class="kc"><div class="knob" data-ctrl="ctrl-3" role="slider" tabindex="0" aria-label="Ctrl 3"><i></i></div><span class="r9-cap">Ctrl 3<br><span class="r42-dim" data-cap="3">&nbsp;</span></span></div>
+        </div>
+      </div>
+
+      <div class="d4-center">
+        <div class="d4-col l">
+          <div class="d4-fxk"><span class="r42-t">Filter+Drive<i class="led r9-led"></i></span><button class="r9-btn" data-ctrl="fx-filter" aria-label="Filter + Drive"></button></div>
+          <div class="d4-fxk"><span class="r42-t">Isolator<i class="led r9-led"></i></span><button class="r9-btn" data-ctrl="fx-isolator" aria-label="Isolator"></button></div>
+          <div class="d4-fxk"><span class="r42-t">Delay<i class="led r9-led"></i></span><button class="r9-btn" data-ctrl="fx-delay" aria-label="Delay"></button></div>
+        </div>
+        <div class="d4-screen">
+          <div class="r42-win" id="d4-seg" aria-label="Display" aria-live="polite"></div>
+          <div class="d4-leds">
+            <span class="r42-lr"><i class="led r9-led" data-led="bpm"></i>BPM</span>
+            <span class="r42-lr"><i class="led r9-led" data-led="pad"></i>Pad</span>
+            <span class="r42-lr"><i class="led r9-led" data-led="fx"></i>FX</span>
+          </div>
+        </div>
+        <div class="d4-col r">
+          <div class="d4-fxk"><span class="r42-t"><i class="led r9-led"></i>Vinyl Sim</span><button class="r9-btn" data-ctrl="fx-vinyl" aria-label="Vinyl Sim"></button></div>
+          <div class="d4-fxk"><span class="r42-t"><i class="led r9-led"></i>DJFX Looper</span><button class="r9-btn" data-ctrl="fx-djfx" aria-label="DJFX Looper"></button></div>
+          <div class="d4-fxk"><span class="r42-t"><i class="led r9-led"></i>MFX <span class="r42-dim">Pad 1–4</span></span><button class="r9-btn" data-ctrl="fx-mfx" aria-label="MFX"></button></div>
+        </div>
+      </div>
+
+      <div class="r42-group d4-grp"><span class="r42-gt">Perform</span>
+        <div class="d4-row">
+          <div class="r42-bk"><span class="r42-t">Bus 1</span><i class="led r9-led"></i><button class="r9-btn" data-ctrl="bus-1" aria-label="Bus 1"></button><span class="r9-cap r42-dim">Perform</span></div>
+          <div class="r42-bk"><span class="r42-t">Bus 2</span><i class="led r9-led"></i><button class="r9-btn" data-ctrl="bus-2" aria-label="Bus 2"></button><span class="r9-cap r42-dim">Master</span></div>
+          <div class="r42-bk"><span class="r42-t">Mute</span><i class="led r9-led"></i><button class="r9-btn" data-ctrl="mute" aria-label="Mute"></button><span class="r9-cap r42-dim">Break</span></div>
+          <div class="r42-bk"><span class="r42-t">Hold</span><i class="led r9-led"></i><button class="r9-btn" data-ctrl="hold" aria-label="Hold"></button><span class="r9-cap r42-dim">&nbsp;</span></div>
+          <div class="r42-bk"><span class="r42-t">Sub Pad</span><i class="led r9-led"></i><button class="r9-btn" data-ctrl="subpad" aria-label="Sub Pad"></button><span class="r9-cap r42-dim">Roll</span></div>
+          <div class="r42-bk"><span class="r42-t">Resample</span><i class="led r9-led"></i><button class="r9-btn red" data-ctrl="resample" aria-label="Resample"></button><span class="r9-cap r42-dim">Rec</span></div>
+        </div>
+      </div>
+
+      <div class="r42-group d4-grp"><span class="r42-gt">Pad Mode</span>
+        <div class="d4-row">
+          <div class="r42-bk"><span class="r42-t">Gate</span><i class="led r9-led"></i><button class="r9-btn" data-ctrl="gate" aria-label="Gate"></button></div>
+          <div class="r42-bk"><span class="r42-t">Loop</span><i class="led r9-led"></i><button class="r9-btn" data-ctrl="loop" aria-label="Loop"></button></div>
+          <div class="r42-bk"><span class="r42-t">Reverse</span><i class="led r9-led"></i><button class="r9-btn" data-ctrl="reverse" aria-label="Reverse"></button></div>
+          <div class="r42-bk"><span class="r42-t">Velocity</span><span class="led-slot" style="height:7px"></span><button class="r9-btn" data-ctrl="velocity" aria-label="Velocity"></button></div>
+          <div class="r42-bk"><span class="r42-t">Set-up</span><span class="led-slot" style="height:7px"></span><button class="r9-btn" data-ctrl="setup" aria-label="Set-up"></button></div>
+          <div class="r42-bk"><span class="r42-t">Shift</span><span class="led-slot" style="height:7px"></span><button class="r9-btn" data-ctrl="shift" aria-label="Shift"></button></div>
+        </div>
+      </div>
+
+      <div class="r42-group d4-pads"><span class="r42-gt">Sample Pads</span>
+        <div class="d4-pads-grid" id="d4-pads"></div>
+      </div>
+
+      <div class="d4-bottom">
+        <div class="kc"><i class="r9-jack" data-jack="line-in"></i><span class="r9-cap">Line In</span></div>
+        <div class="kc"><div class="knob r9-knob-s" data-ctrl="in-level" role="slider" tabindex="0" aria-label="Input Level"><i></i></div><span class="r9-cap">Level</span></div>
+        <div class="d4-src">
+          <div class="r42-bk"><button class="r9-btn" data-ctrl="in-source" aria-label="Source"></button><span class="r9-cap">Source</span></div>
+          <div class="d4-srcleds"><span class="r42-lr" data-src="rj2000"><i class="led r9-led" data-led="src-rj"></i>RJ-2000</span><span class="r42-lr" data-src="line"><i class="led r9-led" data-led="src-line"></i>Line</span></div>
+        </div>
+        <span class="d4-sp"></span>
+        <div class="d4-st d4-bx"><div>FEITO NA BAIXADA</div></div>
+        <span class="d4-sp"></span>
+        <div class="kc"><i class="r9-jack" data-jack="phones"></i><span class="r9-cap">Phones</span></div>
+      </div>
+    </section>
+    </div>
+
+    <p class="solo-help">Solte um arquivo de áudio num pad, ou aperte <b>Shift</b> e o pad para escolher o arquivo. Teclado: <kbd>1</kbd>–<kbd>4</kbd>, <kbd>Q</kbd>–<kbd>R</kbd>, <kbd>A</kbd>–<kbd>F</kbd> e <kbd>Z</kbd>–<kbd>V</kbd> tocam os 16 pads; MIDI: canal 10, notas 36 a 51. Efeito: escolha o Bus, aperte o efeito e gire Ctrl 1–3. MIDI Learn: aperte o botão, toque num controle, mexa no controlador e aperte Enter.</p>
+    <p class="credit">
+      DCX 404 <span id="version">b0.1</span> &middot; open source (GPL-3.0) &middot; sampler de performance da DCX Audio &middot;
+      <a href="https://github.com/dcxaudio/dcx-404/blob/main/docs/manual.md" target="_blank" rel="noopener">manual</a>
+    </p>
+  </main>
+
+  <input type="file" id="d4-file" accept="audio/*,.wav,.aif,.aiff,.mp3,.ogg,.flac,.m4a" hidden>
+
+  <!-- dcx-core (submodulo em vendor/dcx-core) -->
+  <script src="vendor/dcx-core/js/dsp.js"></script>
+  <script src="vendor/dcx-core/js/decode.js"></script>
+  <script src="vendor/dcx-core/js/store.js"></script>
+  <script src="vendor/dcx-core/js/output.js"></script>
+  <script src="vendor/dcx-core/js/midi.js"></script>
+  <script src="vendor/dcx-core/js/midimap.js"></script>
+  <script src="vendor/dcx-core/js/host.js"></script>
+  <script src="vendor/dcx-core/js/learnbar.js"></script>
+  <!-- o aparelho -->
+  <script src="js/fx.js"></script>
+  <script src="js/dcx404.js"></script>
+  <script src="js/solo.js"></script>
+</body>
+</html>

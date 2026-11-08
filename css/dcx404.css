@@ -1,0 +1,150 @@
+/* DCX 404 - o painel
+ *
+ * Carregar depois de vendor/dcx-core/css/base.css e solo.css.
+ * O desenho e o do mockup v4 aprovado (dcx-design/dcx-404/mockup-v4.html).
+ * A primeira parte sao os componentes que o mockup pegava emprestados do
+ * rj2000.css (marca, teclas, LED de 7 segmentos, grupos, knobs, jacks e pads),
+ * copiados iguais para o 404 nao depender do repositorio do RJ-2000.
+ * A segunda e o que e so do 404 (prefixo d4-), igual ao mockup.
+ */
+
+/* ================================================================ emprestado do rj2000.css (igual) */
+.r9-cap { font-size: 9px; text-transform: uppercase; letter-spacing: .08em; color: var(--rack-ink); text-align: center; line-height: 1.15; }
+.r9-maker { font-weight: 700; font-size: 28px; letter-spacing: .02em; color: var(--rack-ink); line-height: 1; transform: scaleY(1.1); transform-origin: left bottom; }
+.r9-sub { font-size: 9px; letter-spacing: .28em; text-transform: uppercase; color: var(--rack-ink); }
+.r9-model {
+  font-weight: 700; font-size: 30px; line-height: 1; letter-spacing: .06em;
+  color: transparent; -webkit-text-stroke: 1.2px var(--rack-ink);
+}
+.r9-led { width: 7px; height: 7px; }
+.r9-btn {
+  width: 36px; height: 24px; padding: 0; border: 0; border-radius: 2px;
+  background: linear-gradient(#dfe1dd, var(--rack-btn));
+  box-shadow: 0 2px 0 var(--rack-btn-edge), 0 4px 6px rgba(0,0,0,.5);
+  touch-action: manipulation; transition: transform .04s, box-shadow .04s;
+}
+.r9-btn.down { transform: translateY(2px); box-shadow: 0 0 0 var(--rack-btn-edge), 0 1px 3px rgba(0,0,0,.5); }
+.r9-control {
+  width: 88px; height: 88px; cursor: ns-resize;
+  background: radial-gradient(circle at 38% 30%, #d0d2d4, #8e9194 55%, #5b5e61);
+  box-shadow: 0 0 0 3px #0b0b0b, 0 8px 14px rgba(0,0,0,.6);
+}
+.r9-control i { top: 8px; height: 16px; width: 4px; margin-left: -2px; background: #1b1c1d; transform-origin: 50% 36px; }
+.r9-knob-s { width: 36px; height: 36px; }
+.r9-knob-s i { top: 4px; height: 11px; transform-origin: 50% 14px; }
+.r9-jack {
+  display: block; width: 26px; height: 26px; border-radius: 50%;
+  background: radial-gradient(circle, #050505 30%, #c0c2c4 34%, #7f8285 58%, #2b2c2e 63%);
+  box-shadow: 0 0 0 2px #0d0d0d;
+}
+
+.r42-dim { color: #8e9093; }
+.r42-win {
+  display: flex; gap: 3px; align-items: flex-end; padding: 8px 10px; border-radius: 3px;
+  background: #0a0505; box-shadow: inset 0 2px 6px #000, 0 1px 0 #34363a;
+}
+.r42-win svg { width: 22px; height: 38px; display: block; }
+.r42-seg { fill: rgba(255, 59, 38, .07); }
+.r42-seg.on { fill: #ff3b26; filter: drop-shadow(0 0 3px rgba(255, 59, 38, .6)); }
+.r42-lr {
+  display: flex; align-items: center; gap: 7px; padding: 1px 0; border: 0; background: none;
+  font-size: 9px; text-transform: uppercase; letter-spacing: .08em; color: var(--rack-ink); text-align: left;
+}
+.r42-group { position: relative; border: 1px solid #4c4f52; border-radius: 3px; padding: 14px 10px 10px; display: flex; gap: 12px; align-items: flex-end; }
+.r42-gt {
+  position: absolute; top: -6px; left: 10px; padding: 0 6px; background: var(--rack-face);
+  font-size: 9px; letter-spacing: .14em; text-transform: uppercase; color: #8e9093;
+}
+.r42-bk { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.r42-t {
+  min-height: 20px; display: flex; align-items: flex-end; justify-content: center; gap: 5px; text-align: center;
+  font-size: 9px; line-height: 1.1; text-transform: uppercase; letter-spacing: .05em; color: var(--rack-ink);
+}
+.r42-t .led { margin-bottom: 1px; }
+
+.pcol { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.pad {
+  width: 62px; height: 62px; padding: 0;
+  border: 3px solid #3a3a3a; border-radius: 3px;
+  background: linear-gradient(145deg, #262626, var(--pad) 55%);
+  box-shadow: 0 0 0 2px #000, 0 6px 10px rgba(0,0,0,.6);
+  touch-action: none;
+  transition: transform .03s;
+}
+.pad:active, .pad.down { transform: translateY(2px); background: #070707; }
+.pad.hit { border-color: #5a5a5a; }
+.pad.drop { border-color: var(--rule); box-shadow: 0 0 0 2px #000, 0 0 14px 2px rgba(75, 138, 208, .7); }
+
+/* ================================================================ so do 404 (igual ao mockup v4) */
+:root { --scale: 1; /* tamanho do aparelho: 1 = 580 x ~940 px */ }
+.d4-scroll { width: 100%; overflow-x: auto; display: flex; justify-content: center; padding: 6px 0 30px; }
+
+/* gabinete em pe: a mesma face e a mesma sombra do rack, cantos arredondados */
+.d4 { zoom: var(--scale); width: 580px; flex: none; position: relative; color: var(--rack-ink);
+  padding: 22px 26px 22px; border-radius: 14px; background: var(--rack-face);
+  box-shadow: 0 1px 0 #34363a inset, 0 -1px 0 #0b0b0b inset, 0 0 0 1px #0d0d0d, 0 20px 44px rgba(0,0,0,.45); }
+.d4-hole { position: absolute; width: 15px; height: 9px; border-radius: 5px; background: #060606; box-shadow: inset 0 1px 2px #000, 0 1px 0 #34363a; }
+.d4 .r9-cap { font-size: 9px; }
+
+.d4-top { display: flex; justify-content: space-between; align-items: flex-end; padding: 0 4px; }
+.d4-top .r9-brand { display: flex; flex-direction: column; gap: 2px; }
+
+.d4-knobs { display: flex; align-items: flex-end; gap: 18px; margin-top: 16px; }
+.d4 .knob i { transform: rotate(var(--a, 0deg)); }
+.d4-vol { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 0 4px 8px; }
+.d4-vol .r9-control { width: 56px; height: 56px; }
+.d4-vol .r9-control i { top: 7px; height: 14px; transform-origin: 50% 21px; }
+.d4-fx { flex: 1; justify-content: space-around; padding: 16px 10px 10px; }
+.d4-fx .kc { gap: 8px; }
+.d4 .r9-knob-s i { transform-origin: 50% 14px; }
+
+.d4-center { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 16px; margin-top: 16px; }
+.d4-col { display: flex; flex-direction: column; gap: 10px; }
+.d4-fxk { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
+.d4-col.r .d4-fxk { flex-direction: row-reverse; }
+.d4-fxk .r42-t { min-height: 0; gap: 6px; }
+.d4-screen { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.d4-screen .r42-win { padding: 10px 12px; }
+.d4-screen .r42-win svg { width: 26px; height: 44px; }
+.d4-leds { display: flex; gap: 10px; }
+
+.d4 .r9-btn { width: 44px; height: 30px; }
+.d4 .r9-btn.red { background: linear-gradient(#e2463f, var(--key-red)); box-shadow: 0 2px 0 var(--key-red-edge), 0 4px 6px rgba(0,0,0,.5); }
+.d4 .r9-btn.red.down { box-shadow: 0 0 0 var(--key-red-edge), 0 1px 3px rgba(0,0,0,.5); }
+.d4-row { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; width: 100%; }
+.d4-grp { margin-top: 16px; display: block; padding: 14px 8px 8px; }
+.d4-grp .r42-bk { gap: 5px; }
+.d4-grp .r42-t { min-height: 14px; }
+
+.d4-pads { margin-top: 16px; display: block; padding: 14px 10px 8px; }
+.d4-pads-grid { display: grid; grid-template-columns: repeat(4, 62px); justify-content: center; gap: 6px 22px; }
+.d4-pads-grid .pcol { gap: 4px; }
+.d4-pads-grid .cap { font-size: 9px; color: var(--ink-dim); }
+
+.d4-bottom { display: flex; align-items: flex-end; gap: 18px; margin-top: 14px; padding: 0 6px; }
+.d4-bottom .kc { gap: 6px; }
+.d4-src { display: flex; align-items: flex-end; gap: 10px; }
+.d4-src .d4-srcleds { display: flex; flex-direction: column; gap: 6px; padding-bottom: 16px; }
+.d4-sp { flex: 1; }
+
+.d4-st { position: absolute; pointer-events: none; transform: rotate(var(--rot)); filter: drop-shadow(0 1px 1px rgba(0,0,0,.5)) saturate(.8); }
+.d4-st > div { position: relative; overflow: hidden; border: 2px solid #e9e6dd; }
+.d4-bx { position: relative; --rot: -2deg; margin-bottom: 8px; }
+.d4-bx > div { padding: 3px 7px 1px; border-radius: 2px; background: #141414; color: #e9e6dd; white-space: nowrap; font: 400 14px/1 var(--lcd-font); letter-spacing: .08em; }
+
+/* ================================================================ o que o aparelho ligado precisa (nao muda o desenho) */
+/* desligado: o display fica apagado */
+.d4:not(.on) .r42-seg.on { fill: rgba(255, 59, 38, .07); filter: none; }
+/* pad com sample: o numero acende */
+.d4-pads-grid .pcol.used .cap { color: var(--ink); }
+/* fonte de entrada que nao existe nesta pagina (RJ-2000 fora do Studio) */
+.r42-lr.off { opacity: .35; }
+/* o aparelho focado recebe o teclado */
+.d4.focus { box-shadow: 0 0 0 2px var(--rule), 0 20px 44px rgba(0,0,0,.45); }
+
+/* telas estreitas: o aparelho inteiro diminui (zoom), sem mudar a disposicao */
+@media (max-width: 640px) { :root { --scale: .9; } }
+@media (max-width: 560px) { :root { --scale: .8; } }
+@media (max-width: 500px) { :root { --scale: .7; } }
+@media (max-width: 440px) { :root { --scale: .62; } }
+@media (max-width: 390px) { :root { --scale: .56; } }
