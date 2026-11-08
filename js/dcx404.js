@@ -70,7 +70,7 @@ window.RJ = window.RJ || {};
     RJ.D4FX.forEach(f => { params[f.id] = f.def.slice(); });
     return {
       format: "dcx404", v: 1,
-      vol: 0.8, inLevel: 0.7, vel: "soft", bpm: 90, roll: 3, padLevel: new Array(PADS).fill(0.8),
+      vol: 0.8, inLevel: 0.7, sendRj: 1, send950: 1, vel: "soft", bpm: 90, roll: 3, padLevel: new Array(PADS).fill(0.8),
       bus: 1, fx: { 1: null, 2: null }, mfx: "reverb", params,
       hold: false, mute: false, cur: 0,
       pads: new Array(PADS).fill(null).map(newPad),
@@ -96,7 +96,7 @@ window.RJ = window.RJ || {};
       this.last = { pad: -1, vel: 1 };
       this.roll = null;
       this.rec = null;
-      this.src = "off";                         // off | rj2000 | line
+      this.src = "off";                         // off | rj2000 | rj950 | mix | line
       this.line = null;
       this.shown = null;
       this.confirmDel = 0;
@@ -274,9 +274,10 @@ window.RJ = window.RJ || {};
       G.pads = ctx.createGain();
       G.srcRj = ctx.createGain(); G.srcRj.gain.value = 0;
       G.srcLine = ctx.createGain(); G.srcLine.gain.value = 0;
+      G.src950 = ctx.createGain(); G.src950.gain.value = 0;   // o Studio liga a saida do RJ-950 aqui
       G.inLevel = ctx.createGain();
       this.host.input().connect(G.srcRj);
-      G.srcRj.connect(G.inLevel); G.srcLine.connect(G.inLevel);
+      G.srcRj.connect(G.inLevel); G.src950.connect(G.inLevel); G.srcLine.connect(G.inLevel);
       G.bus1 = new RJ.D4Slot(ctx);
       G.bus2 = new RJ.D4Slot(ctx);
       G.mute = ctx.createGain();
@@ -319,7 +320,9 @@ window.RJ = window.RJ || {};
     applyInput() {
       if (!this.g) return;
       this.ramp(this.g.inLevel.gain, Math.pow(this.st.inLevel * 1.25, 2));
-      this.ramp(this.g.srcRj.gain, this.src === "rj2000" ? 1 : 0);
+      // RJ-2000 e RJ-950 tem cada um o seu envio (1,0 = som igual ao direto); so a Mix soma os dois
+      this.ramp(this.g.srcRj.gain, this.src === "rj2000" || this.src === "mix" ? this.st.sendRj : 0);
+      this.ramp(this.g.src950.gain, this.src === "rj950" || this.src === "mix" ? this.st.send950 : 0);
       this.ramp(this.g.srcLine.gain, this.src === "line" ? 1 : 0);
     }
     applyMute() { if (this.g) this.ramp(this.g.mute.gain, this.st.mute ? 0 : 1, 0.002); }
@@ -335,8 +338,10 @@ window.RJ = window.RJ || {};
     useState(d) {
       if (!d || d.format !== "dcx404") throw new Error("Nao e um estado do DCX 404");
       const st = newState();
-      ["vol", "inLevel", "bpm", "roll", "bus", "mfx", "hold", "mute", "cur"].forEach(k => { if (d[k] !== undefined) st[k] = d[k]; });
+      ["vol", "inLevel", "sendRj", "send950", "bpm", "roll", "bus", "mfx", "hold", "mute", "cur"].forEach(k => { if (d[k] !== undefined) st[k] = d[k]; });
       st.vol = clamp(+st.vol || 0, 0, 1); st.inLevel = clamp(+st.inLevel || 0, 0, 1);
+      st.sendRj = d.sendRj === undefined ? 1 : clamp(+d.sendRj || 0, 0, 2);
+      st.send950 = d.send950 === undefined ? 1 : clamp(+d.send950 || 0, 0, 2);
       st.bpm = clamp(Math.round(+st.bpm) || 90, 40, 240); st.roll = clamp(st.roll | 0, 0, ROLLS.length - 1);
       st.bus = st.bus === 2 ? 2 : 1; st.cur = clamp(st.cur | 0, 0, PADS - 1);
       st.hold = !!st.hold; st.mute = !!st.mute;
@@ -654,13 +659,22 @@ window.RJ = window.RJ || {};
 
     curFx() { const id = this.st.fx[this.st.bus]; return id ? RJ.D4FX.byId(id) : null; }
 
+    /** Set-up com Shift armado e Source em Mix: Ctrl 1 e 2 viram os envios do RJ-2000 e do RJ-950. */
+    sendPage() { return this.setup && this.shift && this.src === "mix"; }
+
     ctrlGet(k) {
+      if (this.sendPage()) return [this.st.sendRj / 2, this.st.send950 / 2, 0][k];
       if (this.setup) return [ (this.st.bpm - 40) / 200, this.st.roll / (ROLLS.length - 1), this.st.padLevel[this.st.cur] ][k];
       const f = this.curFx();
       return f ? this.st.params[f.id][k] : 0.5;
     }
 
     ctrlSet(k, v) {
+      if (this.sendPage()) {
+        if (k === 0) { this.st.sendRj = v * 2; this.applyInput(); this.flash(String(Math.round(v * 127)), "fx"); }
+        if (k === 1) { this.st.send950 = v * 2; this.applyInput(); this.flash(String(Math.round(v * 127)), "fx"); }
+        return;
+      }
       if (this.setup) {
         if (k === 0) { this.st.bpm = Math.round(40 + v * 200); this.applyBpm(); this.flash(String(this.st.bpm), "bpm"); }
         if (k === 1) { this.st.roll = Math.round(v * (ROLLS.length - 1)); this.flash(ROLL_SHOW[this.st.roll], "bpm"); }
@@ -698,8 +712,8 @@ window.RJ = window.RJ || {};
     }
 
     /** Shift: tocar e soltar arma para o proximo botao; segurar vale enquanto segura. */
-    shiftDown() { this.shiftT = performance.now(); this.shiftHeldUsed = false; this.shift = !this.shift; }
-    shiftUp() { if (performance.now() - this.shiftT > LONG || this.shiftHeldUsed) this.shift = false; }
+    shiftDown() { this.shiftT = performance.now(); this.shiftHeldUsed = false; this.shift = !this.shift; this.renderCaps(); }
+    shiftUp() { if (performance.now() - this.shiftT > LONG || this.shiftHeldUsed) this.shift = false; this.renderCaps(); }
     shiftUsed() { this.shiftHeldUsed = true; if (this.btn.shift && !this.btn.shift.dataset.press) this.shift = false; this.renderButtons(); }
 
     /** Resample: grava a saida com efeito (antes do Volume) no primeiro pad vazio. Shift + Resample apaga o pad escolhido. */
@@ -770,12 +784,15 @@ window.RJ = window.RJ || {};
     /** As fontes que existem nesta pagina: o RJ-2000 so no Studio (quando ele esta em targets()). */
     sources() {
       const s = [];
-      if (this.host.targets().some(t => t.id === "rj2000")) s.push("rj2000");
+      const has = id => this.host.targets().some(t => t.id === id);
+      if (has("rj2000")) s.push("rj2000");
+      if (has("rj950")) s.push("rj950");
+      if (has("rj2000") && has("rj950")) s.push("mix");
       s.push("line");
       return s;
     }
 
-    /** Source: troca a fonte da entrada (RJ-2000, Line, desligada). A Line so liga quando escolhida. */
+    /** Source: troca a fonte da entrada (desligada, RJ-2000, RJ-950, Mix dos dois, Line). A Line so liga quando escolhida. */
     async nextSource() {
       const list = ["off"].concat(this.sources());
       const next = list[(list.indexOf(this.src) + 1) % list.length];
@@ -796,7 +813,8 @@ window.RJ = window.RJ || {};
       this.src = next;
       if (next !== "line") this.closeLine();
       this.applyInput();
-      this.flash({ off: "oFF", rj2000: "rJ", line: "Lin" }[next]);
+      this.renderCaps();
+      this.flash({ off: "oFF", rj2000: "rJ", rj950: "950", mix: "Mix", line: "Lin" }[next]);
       this.renderButtons();
     }
 
@@ -902,7 +920,7 @@ window.RJ = window.RJ || {};
     renderCaps() {
       if (!this.root) return;
       const f = this.curFx();
-      const caps = this.setup ? ["BPM", "Roll", "Pad Lvl"] : f ? f.caps : ["–", "–", "–"];
+      const caps = this.sendPage() ? ["Snd 2000", "Snd 950", "–"] : this.setup ? ["BPM", "Roll", "Pad Lvl"] : f ? f.caps : ["–", "–", "–"];
       $$("[data-cap]", this.root).forEach((el, k) => { el.textContent = caps[k]; });
       Object.values(this.knobs || {}).forEach(k => k.draw());
     }

@@ -124,7 +124,7 @@
 .d4-bottom { display: flex; align-items: flex-end; gap: 18px; margin-top: 14px; padding: 0 6px; }
 .d4-bottom .kc { gap: 6px; }
 .d4-src { display: flex; align-items: flex-end; gap: 10px; }
-.d4-src .d4-srcleds { display: flex; flex-direction: column; gap: 6px; padding-bottom: 16px; }
+.d4-src .d4-srcleds { display: grid; grid-template-columns: auto auto; gap: 4px 12px; padding-bottom: 14px; }
 .d4-sp { flex: 1; }
 
 .d4-st { position: absolute; pointer-events: none; transform: rotate(var(--rot)); filter: drop-shadow(0 1px 1px rgba(0,0,0,.5)) saturate(.8); }

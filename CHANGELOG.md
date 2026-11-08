@@ -1,5 +1,11 @@
 # Changelog
 
+## Próxima
+
+- Source ganha **RJ-950** e **Mix**: off, RJ-2000, RJ-950, Mix, Line. Com RJ-950, o som do 950 entra no Bus 1 do 404 (pelos efeitos) e some da saída direta, sem soar duplo; Mix soma RJ-2000 e RJ-950 na entrada. Só aparecem no Studio (Mix só com os dois). O LCD mostra rJ, 950, Mix ou Lin.
+- Envio de cada aparelho na Mix: no Set-up, com Shift armado, Ctrl 1 é o envio do RJ-2000 e Ctrl 2 o do RJ-950 (64 = som igual ao direto, o padrão). Salvos no estado (`sendRj`, `send950`).
+- A página do Studio precisa ligar `host.route("rj950", d404.g.src950, { dry: false })` junto com a rota do RJ-2000 (feito no dcx-studio).
+
 ## b0.1 (beta)
 
 - Primeira versão do DCX 404, com a tela do mockup v4 e o host do [dcx-core](https://github.com/dcxaudio/dcx-core) v1.0.0 (submódulo em `vendor/dcx-core`). Os dados ficam no navegador com o prefixo `dcx404/`.
