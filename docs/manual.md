@@ -10,6 +10,7 @@ Toque em **LIGAR** (ou aperte Espaço). O display mostra `b0.1` e depois o BPM.
   - **Gate:** aceso, o pad toca enquanto você segura. Apagado (Trigger), toca até o fim.
   - **Loop:** repete. Em Trigger, toque o pad de novo para parar.
   - **Reverse:** toca de trás para frente.
+  - **LO-FI (Shift + Reverse):** liga/desliga a redução de bits e de taxa em tudo que passa pelo 404 (pads e a Source), como o Vinyl Sim. O LED do marcador "Lo-fi" (embaixo do Reverse) acende e o display mostra `Lo.` ou `Lo-`. Com o Shift armado, Ctrl 1 muda os bits e Ctrl 2 a taxa (padrão: 6 bits, taxa ÷4). O Resample grava com o LO-FI ligado. Fica salvo com o estado.
 - **Hold:** os pads em Gate continuam tocando depois de soltar. Ao apagar o Hold, eles param.
 - **Sub Pad (Roll):** segure para repetir o último pad no tempo do BPM. Com Hold, um toque liga e outro desliga.
 - **Velocity:** troca a curva de força: `5UA` (suave, padrão, levanta os toques fracos), `Lin` (linear) e `127` (sempre no máximo). Teclado e mouse tocam no máximo.

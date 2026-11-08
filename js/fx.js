@@ -423,6 +423,16 @@ window.RJ = window.RJ || {};
     };
   }
 
+  /** LO-FI global do 404 (Shift + Reverse): o mesmo worklet d4-crush do efeito Lo-fi, com bits e taxa direto (sem o tom).
+   *  O worklet precisa ter carregado (d4LoadWorklets). Ponto de partida: 6 bits, taxa dividida por 4 (bem audivel, como o LO-FI do SP-404A). */
+  RJ.D4_LOFI = { bits: 6, down: 4, minBits: 2, maxBits: 16, maxDown: 24 };
+  RJ.d4LofiNode = function (ctx, bits, down) {
+    const node = workletNode(ctx, "d4-crush");
+    node.parameters.get("bits").value = bits;
+    node.parameters.get("down").value = down;
+    return node;
+  };
+
   /** 8. Compressor: sustain (limiar e razao juntos), ataque e nivel de saida. */
   function compressor(ctx) {
     const input = ctx.createGain(), output = ctx.createGain();

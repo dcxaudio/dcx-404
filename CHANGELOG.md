@@ -2,6 +2,9 @@
 
 ## Próxima
 
+- **Shift do teclado:** `setShiftKey(on)` liga/desliga o Shift vindo da tecla do computador (acende o botão Shift e vale também na página de envios Set-up + Mix). A página solo usa; o Studio usa quando o 404 está selecionado.
+
+- **LO-FI (b0.2):** Shift + Reverse liga/desliga o LO-FI do 404, um efeito global como o Vinyl Sim: reduz bits e taxa de tudo que sai do Bus 2 (pads, Source RJ-2000, RJ-950 e Mix, Line). Ponto de partida: 6 bits e taxa ÷4 (bem audível, como o LO-FI do SP-404A). Com o Shift armado (fora do Set-up), Ctrl 1 ajusta os bits (2 a 16) e Ctrl 2 a taxa (÷24 a ÷1). Liga e desliga com crossfade de ~20 ms, sem estalo; desligado, o som é idêntico ao de antes (bit a bit). Um marcador "Lo-fi" com LED fica embaixo do Reverse (clicável, aparece no MIDI Learn como "404 Lo-fi"). O display mostra `Lo.` ou `Lo-`. O Resample grava com o LO-FI. Salvo no estado (`lofi`, `lofiBits`, `lofiDown`); estados antigos abrem com o LO-FI desligado (o campo por pad, `pads[i].lofi`, foi descartado). No Studio, o `index.html` precisa do marcador (`data-ctrl="lofi"`, veja o `index.html` do 404); sem ele o LO-FI funciona, só sem o LED.
 - O Input Level padrão agora é 0,8 (102 no LCD), no lugar de 0,7: com a Source em RJ-2000 e sem efeitos, o 404 soa igual ao som direto (ganho 1,0, antes 0,77, cerca de 2,3 dB abaixo). Estados já salvos mantêm o valor deles.
 - Source ganha **RJ-950** e **Mix**: off, RJ-2000, RJ-950, Mix, Line. Com RJ-950, o som do 950 entra no Bus 1 do 404 (pelos efeitos) e some da saída direta, sem soar duplo; Mix soma RJ-2000 e RJ-950 na entrada. Só aparecem no Studio (Mix só com os dois). O LCD mostra rJ, 950, Mix ou Lin.
 - Envio de cada aparelho na Mix: no Set-up, com Shift armado, Ctrl 1 é o envio do RJ-2000 e Ctrl 2 o do RJ-950 (64 = som igual ao direto, o padrão). Salvos no estado (`sendRj`, `send950`).

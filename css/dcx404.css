@@ -148,3 +148,13 @@
 @media (max-width: 500px) { :root { --scale: .7; } }
 @media (max-width: 440px) { :root { --scale: .62; } }
 @media (max-width: 390px) { :root { --scale: .56; } }
+
+/* LO-FI global (Shift + Reverse): a marca fica embaixo do Reverse, sem mexer na altura da fileira */
+.d4-rev { position: relative; }
+.d4-grp:has(.d4-rev) { padding-bottom: 22px; }
+.d4-lo { position: absolute; top: 100%; margin-top: 4px; }
+.d4-lotag {
+  display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: none; cursor: pointer;
+  font: inherit; font-size: 8px; letter-spacing: .08em; text-transform: uppercase; color: #8e9093; white-space: nowrap;
+}
+.d4-lotag .led { margin: 0; }

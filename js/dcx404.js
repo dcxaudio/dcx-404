@@ -73,6 +73,7 @@ window.RJ = window.RJ || {};
       vol: 0.8, inLevel: 0.8, sendRj: 1, send950: 1, vel: "soft", bpm: 90, roll: 3, padLevel: new Array(PADS).fill(0.8),
       bus: 1, fx: { 1: null, 2: null }, mfx: "reverb", params,
       hold: false, mute: false, cur: 0,
+      lofi: false, lofiBits: RJ.D4_LOFI.bits, lofiDown: RJ.D4_LOFI.down,
       pads: new Array(PADS).fill(null).map(newPad),
     };
   }
@@ -167,7 +168,8 @@ window.RJ = window.RJ || {};
         "resample": ["Resample", () => this.resample()],
         "gate": ["Gate", () => this.padMode("gate")],
         "loop": ["Loop", () => this.padMode("loop")],
-        "reverse": ["Reverse", () => this.padMode("rev")],
+        "reverse": ["Reverse", () => (this.shift || this.shiftKey) ? this.toggleLofi() : this.padMode("rev")],
+        "lofi": ["Lo-fi", () => this.toggleLofi(true)],
         "velocity": ["Velocity", () => this.nextVelocity()],
         "setup": ["Set-up", () => this.toggleSetup()],
         "shift": ["Shift", () => this.shiftDown(), () => this.shiftUp()],
@@ -285,7 +287,12 @@ window.RJ = window.RJ || {};
       G.pads.connect(G.bus1.input);
       G.inLevel.connect(G.bus1.input);
       G.bus1.output.connect(G.mute).connect(G.bus2.input);
-      G.bus2.output.connect(G.vol).connect(this.host.output());
+      // LO-FI: seco (ganho 1) e molhado (o worklet entra so quando liga) somam em post, antes do Volume
+      G.lofiDry = ctx.createGain(); G.lofiWet = ctx.createGain(); G.lofiWet.gain.value = 0;
+      G.post = ctx.createGain(); G.crush = null;
+      G.bus2.output.connect(G.lofiDry).connect(G.post);
+      G.lofiWet.connect(G.post);
+      G.post.connect(G.vol).connect(this.host.output());
       // o Looper e o Stopper precisam ouvir sempre: a saida deles vai para um ralo mudo,
       // para o navegador continuar chamando o worklet mesmo com o efeito fora do bus
       G.sink = ctx.createGain(); G.sink.gain.value = 0; G.sink.connect(ctx.destination);
@@ -312,7 +319,7 @@ window.RJ = window.RJ || {};
     slot(b) { return b === 1 ? this.g.bus1 : this.g.bus2; }
 
     applyAll() {
-      this.applyVol(); this.applyInput(); this.applyMute();
+      this.applyVol(); this.applyInput(); this.applyMute(); this.applyLofi();
       [1, 2].forEach(b => this.applyBus(b));
     }
 
@@ -345,6 +352,9 @@ window.RJ = window.RJ || {};
       st.bpm = clamp(Math.round(+st.bpm) || 90, 40, 240); st.roll = clamp(st.roll | 0, 0, ROLLS.length - 1);
       st.bus = st.bus === 2 ? 2 : 1; st.cur = clamp(st.cur | 0, 0, PADS - 1);
       st.hold = !!st.hold; st.mute = !!st.mute;
+      st.lofi = d.lofi === true;
+      st.lofiBits = clamp(Math.round(+d.lofiBits) || RJ.D4_LOFI.bits, RJ.D4_LOFI.minBits, RJ.D4_LOFI.maxBits);
+      st.lofiDown = clamp(Math.round(+d.lofiDown) || RJ.D4_LOFI.down, 1, RJ.D4_LOFI.maxDown);
       if (VELS.includes(d.vel)) st.vel = d.vel;
       if (!RJ.D4FX.byId(st.mfx) || !RJ.D4FX.byId(st.mfx).mfx) st.mfx = "reverb";
       [1, 2].forEach(b => { const id = d.fx && d.fx[b]; st.fx[b] = RJ.D4FX.byId(id) ? id : null; });
@@ -536,6 +546,44 @@ window.RJ = window.RJ || {};
       this.dirty();
     }
 
+    /** Shift + Reverse: liga/desliga o LO-FI do 404 (reducao de bits e de taxa em tudo que sai do Bus 2: pads e Source). */
+    toggleLofi(direct) {
+      if (!direct) this.shiftUsed();
+      if (!this.st.lofi && !this.worklet) { this.flash("Err", "fx"); return; }
+      this.st.lofi = !this.st.lofi;
+      this.applyLofi();
+      this.flash(this.st.lofi ? "Lo." : "Lo-", "fx");
+      this.renderModes();
+      this.dirty();
+    }
+
+    /** O estagio do LO-FI: entre o Bus 2 e o Volume. Desligado, so o caminho seco (ganho 1: som igual ao de antes). */
+    applyLofi() {
+      const G = this.g;
+      if (!G) return;
+      const on = !!(this.st.lofi && this.worklet), ctx = G.ctx;
+      if (on) {
+        clearTimeout(G.lofiTimer);
+        if (!G.crush) {
+          G.crush = RJ.d4LofiNode(ctx, this.st.lofiBits, this.st.lofiDown);
+          G.bus2.output.connect(G.crush).connect(G.lofiWet);
+        }
+        G.crush.parameters.get("bits").value = this.st.lofiBits;
+        G.crush.parameters.get("down").value = this.st.lofiDown;
+      }
+      this.ramp(G.lofiDry.gain, on ? 0 : 1, 0.006);
+      this.ramp(G.lofiWet.gain, on ? 1 : 0, 0.006);
+      if (!on && G.crush) {
+        // tira o worklet do grafo depois que o crossfade terminou
+        clearTimeout(G.lofiTimer);
+        G.lofiTimer = setTimeout(() => {
+          if (this.st.lofi || !G.crush) return;
+          try { G.bus2.output.disconnect(G.crush); } catch (e) { /* ja desligado */ }
+          G.crush.disconnect(); G.crush = null;
+        }, 150);
+      }
+    }
+
     nextVelocity() {
       this.st.vel = VELS[(VELS.indexOf(this.st.vel) + 1) % VELS.length];
       this.flash(VEL_SHOW[this.st.vel], null, 1400);
@@ -660,9 +708,16 @@ window.RJ = window.RJ || {};
     curFx() { const id = this.st.fx[this.st.bus]; return id ? RJ.D4FX.byId(id) : null; }
 
     /** Set-up com Shift armado e Source em Mix: Ctrl 1 e 2 viram os envios do RJ-2000 e do RJ-950. */
-    sendPage() { return this.setup && this.shift && this.src === "mix"; }
+    sendPage() { return this.setup && (this.shift || this.shiftKey) && this.src === "mix"; }
+
+    /** Shift armado (fora do Set-up): Ctrl 1 e 2 ajustam o LO-FI (bits e taxa). */
+    lofiPage() { return !this.setup && (this.shift || this.shiftKey) && !this.sendPage(); }
 
     ctrlGet(k) {
+      if (this.lofiPage()) {
+        const L = RJ.D4_LOFI;
+        return [(this.st.lofiBits - L.minBits) / (L.maxBits - L.minBits), 1 - Math.log(this.st.lofiDown) / Math.log(L.maxDown), 0][k];
+      }
       if (this.sendPage()) return [this.st.sendRj / 2, this.st.send950 / 2, 0][k];
       if (this.setup) return [ (this.st.bpm - 40) / 200, this.st.roll / (ROLLS.length - 1), this.st.padLevel[this.st.cur] ][k];
       const f = this.curFx();
@@ -670,6 +725,13 @@ window.RJ = window.RJ || {};
     }
 
     ctrlSet(k, v) {
+      if (this.lofiPage()) {
+        const L = RJ.D4_LOFI;
+        if (k === 0) { this.st.lofiBits = Math.round(L.minBits + v * (L.maxBits - L.minBits)); this.flash(String(this.st.lofiBits), "fx"); }
+        if (k === 1) { this.st.lofiDown = clamp(Math.round(Math.pow(L.maxDown, 1 - v)), 1, L.maxDown); this.flash("r." + this.st.lofiDown, "fx"); }
+        this.applyLofi();
+        return;
+      }
       if (this.sendPage()) {
         if (k === 0) { this.st.sendRj = v * 2; this.applyInput(); this.flash(String(Math.round(v * 127)), "fx"); }
         if (k === 1) { this.st.send950 = v * 2; this.applyInput(); this.flash(String(Math.round(v * 127)), "fx"); }
@@ -714,6 +776,8 @@ window.RJ = window.RJ || {};
     /** Shift: tocar e soltar arma para o proximo botao; segurar vale enquanto segura. */
     shiftDown() { this.shiftT = performance.now(); this.shiftHeldUsed = false; this.shift = !this.shift; this.renderCaps(); }
     shiftUp() { if (performance.now() - this.shiftT > LONG || this.shiftHeldUsed) this.shift = false; this.renderCaps(); }
+    /** Shift do teclado do computador: vale enquanto a tecla esta apertada (nao arma o proximo botao). */
+    setShiftKey(on) { on = !!on; if (this.shiftKey === on) return; this.shiftKey = on; if (this.btn && this.btn.shift) { this.renderCaps(); this.renderButtons(); } }
     shiftUsed() { this.shiftHeldUsed = true; if (this.btn.shift && !this.btn.shift.dataset.press) this.shift = false; this.renderButtons(); }
 
     /** Resample: grava a saida com efeito (antes do Volume) no primeiro pad vazio. Shift + Resample apaga o pad escolhido. */
@@ -743,7 +807,7 @@ window.RJ = window.RJ || {};
         r.chunks.push(e.data); r.len += e.data[0].length;
         if (r.len >= r.max && this.rec === r) this.stopRec();
       };
-      this.g.bus2.output.connect(node);
+      this.g.post.connect(node);
       node.connect(this.g.sink);
       node.port.postMessage("start");
       this.rec = r;
@@ -760,7 +824,7 @@ window.RJ = window.RJ || {};
     }
 
     finishRec(r) {
-      try { this.g.bus2.output.disconnect(r.node); } catch (e) { /* ja desligado */ }
+      try { this.g.post.disconnect(r.node); } catch (e) { /* ja desligado */ }
       r.node.disconnect();
       const ctx = this.g.ctx, len = Math.min(r.len, r.max);
       if (len < ctx.sampleRate * 0.05) { this.flash("---", "pad"); return; }
@@ -887,7 +951,7 @@ window.RJ = window.RJ || {};
       this.renderModes();
       // teclas que ficam "presas": Set-up e Shift
       this.btn.setup.classList.toggle("down", this.setup || !!this.btn.setup.dataset.press);
-      this.btn.shift.classList.toggle("down", this.shift || !!this.btn.shift.dataset.press);
+      this.btn.shift.classList.toggle("down", this.shift || this.shiftKey || !!this.btn.shift.dataset.press);
       ["bus-1", "bus-2", "mute", "hold", "subpad", "resample", "gate", "loop", "reverse", "velocity", "in-source"].forEach(id => {
         const el = this.btn[id];
         if (el) el.classList.toggle("down", !!el.dataset.press);
@@ -905,6 +969,7 @@ window.RJ = window.RJ || {};
       if (!this.btn) return;
       const p = this.st.pads[this.st.cur];
       this.led("gate", p.gate); this.led("loop", p.loop); this.led("reverse", p.rev);
+      this.led("lofi", this.st.lofi);
     }
 
     renderPads() {
@@ -920,7 +985,7 @@ window.RJ = window.RJ || {};
     renderCaps() {
       if (!this.root) return;
       const f = this.curFx();
-      const caps = this.sendPage() ? ["Snd 2000", "Snd 950", "–"] : this.setup ? ["BPM", "Roll", "Pad Lvl"] : f ? f.caps : ["–", "–", "–"];
+      const caps = this.lofiPage() ? ["Lo Bits", "Lo Rate", "–"] : this.sendPage() ? ["Snd 2000", "Snd 950", "–"] : this.setup ? ["BPM", "Roll", "Pad Lvl"] : f ? f.caps : ["–", "–", "–"];
       $$("[data-cap]", this.root).forEach((el, k) => { el.textContent = caps[k]; });
       Object.values(this.knobs || {}).forEach(k => k.draw());
     }

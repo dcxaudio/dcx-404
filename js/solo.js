@@ -44,7 +44,7 @@
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (!host.on) { if (e.code === "Space" || e.code === "Enter") { e.preventDefault(); on(); } return; }
       if (e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
-      if (e.code === "ShiftLeft" || e.code === "ShiftRight") { d404.shiftKey = true; return; }
+      if (e.code === "ShiftLeft" || e.code === "ShiftRight") { d404.setShiftKey(true); return; }
       const i = PAD_KEYS.indexOf(e.code);
       if (i < 0) return;
       e.preventDefault();
@@ -54,11 +54,11 @@
       d404.padDown(i, 1);
     });
     window.addEventListener("keyup", e => {
-      if (e.code === "ShiftLeft" || e.code === "ShiftRight") { d404.shiftKey = false; return; }
+      if (e.code === "ShiftLeft" || e.code === "ShiftRight") { d404.setShiftKey(false); return; }
       const i = PAD_KEYS.indexOf(e.code);
       if (i >= 0 && held.delete(i)) { d404.padEls[i].classList.remove("down"); d404.padUp(i); }
     });
-    window.addEventListener("blur", () => { d404.shiftKey = false; });
+    window.addEventListener("blur", () => { d404.setShiftKey(false); });
 
     // no console: RJ.solo (o host) e RJ.d404
     RJ.solo = host; RJ.d404 = d404;
