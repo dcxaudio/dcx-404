@@ -1,5 +1,14 @@
 # DCX 404: manual curto (b0.1)
 
+
+## Face nova (teste, Fase 1)
+Em [`../novo/`](../novo/), sem substituir esta versão: o painel cinza do Figma com 12 pads e 5 bancos (A–E, 60 pads).
+- **Bancos:** as teclas A–E trocam o banco; os pads mostram o banco atual e o visor mostra `A.01`…`E.12`. Teclado `C`/`V` ou notas 50/51 do Arturia: banco anterior/próximo.
+- **Pads:** `1`–`4`, `Q`–`R`, `A`–`F` ou notas 36–47 (canal 10). **HOLD** (`Z`, nota 48) e **SUB PAD** (`X`, nota 49) ficam na coluna da direita; **SOURCE** troca a fonte da entrada (o nome aparece no visor).
+- **LO-FI** é uma tecla do Sample Mode (Shift do teclado + Reverse também liga). Carregar arquivo: solte num pad ou segure Shift no teclado e toque o pad.
+- Bus 1/2, Mute, Velocity e Set-up não aparecem no painel novo: só pelo MIDI já aprendido na página estável (o mapa é copiado na primeira abertura). Os efeitos ligam no Bus 1.
+- Ainda sem ação: PITCH, Pattern Sequencer, Sample Edit, TAP TEMPO, DEL, REC, STEREO, CANCEL, REMAIN, MARK e MIC.
+
 ## Ligar
 Toque em **LIGAR** (ou aperte Espaço). O display mostra `b0.1` e depois o BPM.
 

@@ -1,0 +1,16 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="84" height="47" viewBox="0 0 84 47" fill="none" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g id="Superf&#195;&#173;cie moldada">
+<use xlink:href="#stroke0_0_339" fill="url(#paint0_linear_0_339)"/>
+<mask id="stroke1_0_339" fill="white">
+<use xlink:href="#stroke0_0_339"/>
+</mask>
+<path d="M80.5964 0H20.5575C18.0162 0 16.1102 1.20513 14.8395 3.61538L0.544571 41.5769C-0.726094 45.1923 0.226904 47 3.40357 47H64.3955C66.9368 47 68.5251 45.7949 69.1604 43.3846L83.4554 5.42308C84.7261 1.80769 83.7731 0 80.5964 0Z" stroke-width="1.6" stroke="#E5949C" mask="url(#stroke1_0_339)"/>
+</g>
+<defs>
+<linearGradient id="paint0_linear_0_339" x1="6.95096e-10" y1="0" x2="6.95096e-10" y2="47" gradientUnits="userSpaceOnUse">
+<stop stop-color="#E68791"/>
+<stop offset="1" stop-color="#C75A69"/>
+</linearGradient>
+<path id="stroke0_0_339" d="M80.5964 0H20.5575C18.0162 0 16.1102 1.20513 14.8395 3.61538L0.544571 41.5769C-0.726094 45.1923 0.226904 47 3.40357 47H64.3955C66.9368 47 68.5251 45.7949 69.1604 43.3846L83.4554 5.42308C84.7261 1.80769 83.7731 0 80.5964 0Z"/>
+</defs>
+</svg>

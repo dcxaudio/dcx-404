@@ -1,0 +1,20 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="DCX404 / Bot&#195;&#163;o MIC">
+<g id="Encaixe circular" filter="url(#filter0_d_0_7)">
+<circle cx="18" cy="16" r="15" fill="#2D302B"/>
+</g>
+<circle id="Superf&#195;&#173;cie do bot&#195;&#163;o" cx="18" cy="16" r="12.7" fill="#898E95" stroke-width="0.6" stroke="#CFD2D5"/>
+</g>
+<defs>
+<filter id="filter0_d_0_7" x="0" y="0" width="36" height="36" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+<feFlood flood-opacity="0" result="BackgroundImageFix"/>
+<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+<feOffset dy="2"/>
+<feGaussianBlur stdDeviation="1.5"/>
+<feComposite in2="hardAlpha" operator="out"/>
+<feColorMatrix type="matrix" values="0 0 0 0 0.0627451 0 0 0 0 0.0901961 0 0 0 0 0.0705882 0 0 0 0.196078 0"/>
+<feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_0_7"/>
+<feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow_0_7" result="shape"/>
+</filter>
+</defs>
+</svg>

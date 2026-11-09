@@ -1,0 +1,13 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="DCX404 / LED PEAK">
+<circle id="Encaixe do LED" cx="8" cy="8" r="7.5" fill="#27291F" stroke="#56594B"/>
+<circle id="Lente do LED" cx="8" cy="8" r="5" fill="url(#paint0_radial_0_13)"/>
+</g>
+<defs>
+<radialGradient id="paint0_radial_0_13" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(6.5 5.5) rotate(49.0856) scale(9.92472)">
+<stop stop-color="#873831"/>
+<stop offset="0.35" stop-color="#5D1E1C"/>
+<stop offset="1" stop-color="#2D1411"/>
+</radialGradient>
+</defs>
+</svg>

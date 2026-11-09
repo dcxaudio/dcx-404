@@ -1,0 +1,22 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Parafuso &#194;&#183; Cabe&#195;&#167;a met&#195;&#161;lica" clip-path="url(#clip0_0_430)">
+<circle id="Borda da cabe&#195;&#167;a" cx="10" cy="10" r="10" fill="#767C7B"/>
+<circle id="Face met&#195;&#161;lica" cx="10" cy="10" r="8.5" fill="url(#paint0_linear_0_430)" stroke="#F0F1ED"/>
+<circle id="Rebaixo" cx="10" cy="10" r="5" fill="#787F7C"/>
+<rect id="Fenda transversal" x="9" y="6" width="2" height="8" rx="0.5" fill="#313632"/>
+<rect id="Fenda longitudinal" x="6" y="9" width="8" height="2" rx="0.5" fill="#313632"/>
+</g>
+<defs>
+<linearGradient id="paint0_linear_0_430" x1="10" y1="1" x2="10" y2="19" gradientUnits="userSpaceOnUse">
+<stop stop-color="#B0B6B8"/>
+<stop offset="0.08" stop-color="#E0E3E4"/>
+<stop offset="0.36" stop-color="#BDC3C6"/>
+<stop offset="0.65" stop-color="#D9DDDE"/>
+<stop offset="0.94" stop-color="#B8BFC1"/>
+<stop offset="1" stop-color="#E4E6E6"/>
+</linearGradient>
+<clipPath id="clip0_0_430">
+<rect width="20" height="20" fill="white"/>
+</clipPath>
+</defs>
+</svg>

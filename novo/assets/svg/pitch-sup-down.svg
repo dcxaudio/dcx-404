@@ -1,0 +1,24 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="84" height="47" viewBox="0 0 84 47" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Superf&#195;&#173;cie moldada">
+<g filter="url(#filter0_i_0_6)">
+<path d="M4.82759 0H79.1724C82.3908 0 84 1.50641 84 4.51923V42.4808C84 45.4936 82.3908 47 79.1724 47H3.86207C1.28736 47 0 45.4936 0 42.4808L0.965517 4.51923C0.965517 1.50641 2.25287 0 4.82759 0Z" fill="url(#paint0_linear_0_6)"/>
+</g>
+<path d="M4.82715 0.400391H79.1729C80.7264 0.400459 81.8171 0.76434 82.5195 1.42188C83.2171 2.07487 83.5996 3.08179 83.5996 4.51953V42.4805C83.5996 43.9182 83.2171 44.9251 82.5195 45.5781C81.8171 46.2357 80.7264 46.5995 79.1729 46.5996H3.8623C2.65447 46.5996 1.81585 46.2496 1.26953 45.6104C0.712938 44.959 0.399414 43.9392 0.399414 42.4805L1.36523 4.5293V4.51953C1.36523 3.06075 1.67875 2.04096 2.23535 1.38965C2.78161 0.750526 3.61963 0.400475 4.82715 0.400391Z" stroke="#B1B6BD" stroke-width="0.8"/>
+</g>
+<defs>
+<filter id="filter0_i_0_6" x="0" y="0" width="84" height="49" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+<feFlood flood-opacity="0" result="BackgroundImageFix"/>
+<feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix" result="shape"/>
+<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+<feOffset dy="2"/>
+<feGaussianBlur stdDeviation="1.5"/>
+<feComposite in2="hardAlpha" operator="arithmetic" k2="-1" k3="1"/>
+<feColorMatrix type="matrix" values="0 0 0 0 0.09 0 0 0 0 0.106 0 0 0 0 0.09 0 0 0 0.5 0"/>
+<feBlend mode="normal" in2="shape" result="effect1_innerShadow_0_6"/>
+</filter>
+<linearGradient id="paint0_linear_0_6" x1="0" y1="0" x2="0" y2="47" gradientUnits="userSpaceOnUse">
+<stop stop-color="#A3A8AE"/>
+<stop offset="1" stop-color="#868C94"/>
+</linearGradient>
+</defs>
+</svg>

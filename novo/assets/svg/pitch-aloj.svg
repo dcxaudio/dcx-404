@@ -1,0 +1,17 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="96" height="60" viewBox="0 0 96 60" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Alojamento trapezoidal" filter="url(#filter0_d_0_337)">
+<path d="M8.17241 1H87.8276C91.2759 1 93 2.73077 93 6.19231V49.8077C93 53.2692 91.2759 55 87.8276 55H7.13793C4.37931 55 3 53.2692 3 49.8077L4.03448 6.19231C4.03448 2.73077 5.41379 1 8.17241 1Z" fill="#171B17"/>
+</g>
+<defs>
+<filter id="filter0_d_0_337" x="0" y="0" width="96" height="60" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+<feFlood flood-opacity="0" result="BackgroundImageFix"/>
+<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+<feOffset dy="2"/>
+<feGaussianBlur stdDeviation="1.5"/>
+<feComposite in2="hardAlpha" operator="out"/>
+<feColorMatrix type="matrix" values="0 0 0 0 0.0627451 0 0 0 0 0.0901961 0 0 0 0 0.0705882 0 0 0 0.196078 0"/>
+<feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_0_337"/>
+<feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow_0_337" result="shape"/>
+</filter>
+</defs>
+</svg>

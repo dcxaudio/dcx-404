@@ -8,6 +8,7 @@ Sampler de performance que roda no navegador: 16 pads, 9 efeitos ao vivo em dois
 - O botão **MIDI Learn** no alto da página aprende qualquer controle do painel.
 - O manual está em [docs/manual.md](docs/manual.md).
 
+
 ## Rodar no seu computador
 
 O código comum vem do [dcx-core](https://github.com/dcxaudio/dcx-core), um submódulo em `vendor/dcx-core`:
@@ -29,7 +30,8 @@ index.html            página solo (host do dcx-core com só o 404)
 js/solo.js            monta a página: host, teclado, mapa MIDI padrão, tela de ligar
 js/dcx404.js          o aparelho: pads, buses, entrada, Resample, display e armazenamento
 js/fx.js              os 9 efeitos e o AudioWorklet (Looper, Stopper, Lo-fi, gravação)
-css/dcx404.css        o painel (mockup v4)
+css/dcx404.css        o painel da versão estável (mockup v4)
+novo/                 a face nova do Figma (Fase 1: peças SVG, 12 pads, bancos A–E), sem substituir a estável
 docs/manual.md        manual curto
 vendor/dcx-core/      submódulo (v1.0.0)
 ```

@@ -1,0 +1,19 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="480" height="252" viewBox="0 0 480 252" fill="none" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g id="Moldura de apoio &#194;&#183; Efeitos">
+<g id="Corpo vazado">
+<use xlink:href="#stroke0_0_411" fill="url(#paint0_linear_0_411)"/>
+<mask id="stroke1_0_411" fill="white">
+<use xlink:href="#stroke0_0_411"/>
+</mask>
+<path d="M160 18C213.333 -6 266.667 -6 320 18H422C460.667 52.6667 480 88.6667 480 126C480 163.333 460.667 199.333 422 234H320C266.667 258 213.333 258 160 234H58C19.3333 199.333 0 163.333 0 126C0 88.6667 19.3333 52.6667 58 18H160ZM240 20C181.458 20 134 67.4578 134 126C134 184.542 181.458 232 240 232C298.542 232 346 184.542 346 126C346 67.4578 298.542 20 240 20Z" stroke-width="2" stroke="#101210" mask="url(#stroke1_0_411)"/>
+</g>
+</g>
+<defs>
+<linearGradient id="paint0_linear_0_411" x1="216.195" y1="0" x2="216.195" y2="525.671" gradientUnits="userSpaceOnUse">
+<stop stop-color="#444742"/>
+<stop offset="0.3" stop-color="#2C2F2A"/>
+<stop offset="1" stop-color="#171A16"/>
+</linearGradient>
+<path id="stroke0_0_411" d="M160 18C213.333 -6 266.667 -6 320 18H422C460.667 52.6667 480 88.6667 480 126C480 163.333 460.667 199.333 422 234H320C266.667 258 213.333 258 160 234H58C19.3333 199.333 0 163.333 0 126C0 88.6667 19.3333 52.6667 58 18H160ZM240 20C181.458 20 134 67.4578 134 126C134 184.542 181.458 232 240 232C298.542 232 346 184.542 346 126C346 67.4578 298.542 20 240 20Z"/>
+</defs>
+</svg>

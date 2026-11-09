@@ -1,7 +1,7 @@
 /* DCX 404 - o aparelho
  *
- * Sampler de performance: 16 pads, 9 efeitos ao vivo em dois buses, entrada,
- * reamostragem e MIDI Learn. Recebe so a vista do host (host.view("dcx404")):
+ * Sampler de performance: pads (16 na versao estavel; 12 x 5 bancos na face nova, novo/),
+ * 9 efeitos ao vivo em dois buses, entrada, reamostragem e MIDI Learn. Recebe so a vista do host (host.view("dcx404")):
  * quem monta a pagina e o solo.js (pagina solo) ou o DCX Studio.
  *
  * Caminho do som:
@@ -12,7 +12,13 @@
  *
  * Armazenamento (host.store, prefixo "dcx404/" no solo):
  *   "state"   JSON do painel (pads, modos, efeitos, knobs)
- *   "pad/N"   o sample do pad N (0 a 15): { v, name, rate, ch: [base64 Int16, ...] }
+ *   "pad/N"   o sample do pad N: { v, name, rate, ch: [base64 Int16, ...] }
+ *             N = banco * pads + pad (banco A = 0); com 1 banco, N e o numero do pad - 1
+ *
+ * A pagina diz quantos pads e bancos o aparelho tem em #d4: data-pad-count (1 a 16,
+ * padrao 16) e data-banks (1 a 5, padrao 1). Os pads da tela sao os do banco atual;
+ * padDown(i)/padUp(i) recebem o pad da tela (0 a pads - 1). data-face="dcx" e a face nova
+ * (Figma): as teclas acesas ganham a classe .lit e o visor usa os digitos do Figma.
  *   (o mapa MIDI fica com o host: "midimap")
  */
 window.RJ = window.RJ || {};
@@ -22,7 +28,11 @@ window.RJ = window.RJ || {};
   const RJ = window.RJ;
   const VERSION = "b0.1";
   const STATE_KEY = "state";
-  const PADS = 16;
+  const ROOT0 = document.getElementById("d4");
+  const PADS = Math.max(1, Math.min(16, Number(ROOT0?.dataset.padCount) || 16));   // pads na tela
+  const BANKS = Math.max(1, Math.min(5, Number(ROOT0?.dataset.banks) || 1));        // bancos A-E
+  const SLOTS = PADS * BANKS;                                                      // pads guardados
+  const BANK_NAMES = "ABCDE";
   const MAX_REC = 60;              // segundos de Resample
   const ROLLS = [1, 1 / 2, 1 / 3, 1 / 4, 1 / 6, 1 / 8];  // Sub Pad: 1/4, 1/8, 1/8T, 1/16, 1/16T, 1/32
   const ROLL_SHOW = [" 4", " 8", "8t", "16", "16t", "32"];
@@ -48,13 +58,30 @@ window.RJ = window.RJ || {};
     e: "3,20 6,22 6,32 3,35", f: "3,3 6,6 6,16 3,18", g: "4,19 7,17 15,17 18,19 15,21 7,21",
   };
   const DIG = { "0": "abcdef", "1": "bc", "2": "abged", "3": "abgcd", "4": "fgbc", "5": "afgcd", "6": "afgedc", "7": "abc", "8": "abcdefg", "9": "abcfgd",
-    "F": "aefg", "P": "abefg", "b": "cdefg", "d": "bcdeg", "E": "adefg", "r": "eg", "-": "g", " ": "",
+    "F": "aefg", "P": "abefg", "b": "cdefg", "d": "bcdeg", "B": "cdefg", "D": "bcdeg",   // bancos B e D (7 segmentos: como b e d) "E": "adefg", "r": "eg", "-": "g", " ": "",
     "A": "abcefg", "C": "adef", "L": "def", "U": "bcdef", "u": "cde", "n": "ceg", "o": "cdeg", "i": "e", "t": "defg",
     "H": "bcefg", "h": "cefg", "y": "bcdfg", "S": "afgcd", "c": "deg", "_": "d" };
+  // o digito do visor da face nova (Figma, "Digito de sete segmentos", 39 x 63)
+  const DCX_SEG = {
+    a: "M8 0H31L34 3L31 6H8L5 3L8 0Z", b: "M35 5L38 8V26L35 29L32 26V8L35 5Z", c: "M33 34L36 37V55L33 58L30 55V37L33 34Z",
+    d: "M5 57H28L31 60L28 63H5L2 60L5 57Z", e: "M3 34L6 37V55L3 58L0 55V37L3 34Z", f: "M5 5L8 8V26L5 29L2 26V8L5 5Z",
+    g: "M6 29H29L32 32L29 35H6L3 32L6 29Z",
+  };
   function drawSeg(w, txt) {
     const chars = [];
     for (const ch of txt) { if (ch === "." && chars.length) chars[chars.length - 1].dp = true; else chars.push({ ch, dp: false }); }
     while (chars.length < 3) chars.unshift({ ch: " ", dp: false });
+    if (w.dataset.seg === "dcx") {
+      // ponto decimal: o Figma nao tem; so aparece aceso, no vao entre os digitos
+      w.innerHTML = chars.slice(-3).map(({ ch, dp }) => {
+        const on = DIG[ch] || "";
+        const paths = Object.keys(DCX_SEG).map(k => `<path class="dx-sg${on.includes(k) ? " on" : ""}" d="${DCX_SEG[k]}"/>`).join("");
+        // classe propria (dx-sg): com "dx-seg" o <rect> herdava width/height do visor (131 x 63) e virava um bloco vermelho
+        return `<svg width="39" height="63" viewBox="0 0 39 63" overflow="visible" aria-hidden="true">${paths}${dp ? '<rect class="dx-sg on" x="39" y="58" width="4" height="5"/>' : ""}</svg>`;
+      }).join("");
+      w.setAttribute("aria-label", "Display " + txt.trim());
+      return;
+    }
     w.innerHTML = chars.slice(-3).map(({ ch, dp }) => {
       const on = DIG[ch] || "";
       const polys = Object.keys(SEG).map(k => `<polygon class="r42-seg${on.includes(k) ? " on" : ""}" points="${SEG[k]}"/>`).join("");
@@ -70,11 +97,11 @@ window.RJ = window.RJ || {};
     RJ.D4FX.forEach(f => { params[f.id] = f.def.slice(); });
     return {
       format: "dcx404", v: 1,
-      vol: 0.8, inLevel: 0.8, sendRj: 1, send950: 1, vel: "soft", bpm: 90, roll: 3, padLevel: new Array(PADS).fill(0.8),
+      vol: 0.8, inLevel: 0.8, sendRj: 1, send950: 1, vel: "soft", bpm: 90, roll: 3, padLevel: new Array(SLOTS).fill(0.8),
       bus: 1, fx: { 1: null, 2: null }, mfx: "reverb", params,
-      hold: false, mute: false, cur: 0,
+      hold: false, mute: false, cur: 0, bank: 0,
       lofi: false, lofiBits: RJ.D4_LOFI.bits, lofiDown: RJ.D4_LOFI.down,
-      pads: new Array(PADS).fill(null).map(newPad),
+      pads: new Array(SLOTS).fill(null).map(newPad),
     };
   }
 
@@ -82,11 +109,13 @@ window.RJ = window.RJ || {};
     constructor(host) {
       this.host = host;
       this.engine = host.engine;
+      this.version = VERSION;
       this.st = newState();
-      this.buf = new Array(PADS).fill(null);    // AudioBuffer de cada pad
-      this.rbuf = new Array(PADS).fill(null);   // o mesmo, de tras para frente (Reverse)
-      this.voice = new Array(PADS).fill(null);  // a voz tocando em cada pad (uma por pad)
-      this.held = new Set();                    // pads apertados agora
+      this.buf = new Array(SLOTS).fill(null);    // AudioBuffer de cada pad (todos os bancos)
+      this.rbuf = new Array(SLOTS).fill(null);   // o mesmo, de tras para frente (Reverse)
+      this.voice = new Array(SLOTS).fill(null);  // a voz tocando em cada pad (uma por pad)
+      this.held = new Set();                     // pads apertados agora (numero guardado)
+      this.downSlot = new Array(PADS).fill(-1);  // pad da tela -> pad guardado que ele apertou
       this.on = false;
       this.loaded = false;
       this.g = null;                            // o grafo de audio
@@ -107,17 +136,21 @@ window.RJ = window.RJ || {};
 
     build(root = $("#d4")) {
       this.root = root;
+      this.version = root.dataset.version || VERSION;
       this.el = { seg: $("#d4-seg", root), pads: $("#d4-pads", root), file: $("#d4-file") || this.makeFileInput() };
       const L = this.host.learn;
 
-      // pads 4 x 4 (o mesmo .pcol/.pad do RJ-2000)
+      // pads: os que a pagina ja trouxe (face nova) ou 4 x 4 criados aqui (o mesmo .pcol/.pad do RJ-2000)
       this.padEls = [];
       for (let i = 0; i < PADS; i++) {
-        const pc = document.createElement("div");
-        pc.className = "pcol";
-        pc.innerHTML = `<button class="pad" data-ctrl="pad-${i + 1}" aria-label="Pad ${i + 1}"></button><span class="cap">${i + 1}</span>`;
-        const b = pc.firstElementChild;
-        this.el.pads.appendChild(pc);
+        let b = $(`[data-ctrl="pad-${i + 1}"]`, this.el.pads);
+        if (!b) {
+          const pc = document.createElement("div");
+          pc.className = "pcol";
+          pc.innerHTML = `<button class="pad" data-ctrl="pad-${i + 1}" aria-label="Pad ${i + 1}"></button><span class="cap">${i + 1}</span>`;
+          b = pc.firstElementChild;
+          this.el.pads.appendChild(pc);
+        }
         this.padEls.push(b);
         b.addEventListener("pointerdown", e => {
           e.preventDefault();
@@ -138,7 +171,7 @@ window.RJ = window.RJ || {};
           e.preventDefault(); e.stopPropagation();
           b.classList.remove("drop");
           const f = (e.dataTransfer.files || [])[0];
-          if (f) this.loadFile(i, f);
+          if (f) this.loadFile(this.slotOf(i), f);
         });
         L.add("pad-" + (i + 1), b, "Pad " + (i + 1), "pad", { down: v => { if (this.host.on) this.padDown(i, v); }, up: () => this.padUp(i) });
       }
@@ -175,12 +208,15 @@ window.RJ = window.RJ || {};
         "shift": ["Shift", () => this.shiftDown(), () => this.shiftUp()],
         "in-source": ["Source", () => this.nextSource()],
       };
+      for (let k = 0; k < BANKS && BANKS > 1; k++) BTN["bank-" + BANK_NAMES[k].toLowerCase()] = ["Bank " + BANK_NAMES[k], () => this.setBank(k)];
       this.btn = {};
+      this.btnFn = {};
       Object.keys(BTN).forEach(id => {
         const el = $(`[data-ctrl="${id}"]`, root);
         if (!el) return;
         const [name, down, up] = BTN[id];
         this.btn[id] = el;
+        this.btnFn[id] = { down, up };
         el.addEventListener("pointerdown", e => {
           e.preventDefault();
           if (!this.host.on) return;
@@ -218,6 +254,36 @@ window.RJ = window.RJ || {};
       });
       this.render();
     }
+
+    /** Aperta (down = true) ou solta uma tecla pelo id, como o dedo (para mapas MIDI padrao e teclado). */
+    pressKey(id, down) {
+      const f = this.btnFn && this.btnFn[id];
+      if (!f || !this.host.on) return;
+      if (down) f.down(); else if (f.up) f.up();
+      this.renderButtons();
+    }
+
+    /* ---------------------------------------- bancos (A-E) */
+
+    /** Pad da tela i -> numero guardado no banco atual. */
+    slotOf(i) { return this.st.bank * PADS + i; }
+    /** O botao da tela de um pad guardado (null se o banco dele nao esta na tela). */
+    elOf(s) { const i = s - this.st.bank * PADS; return this.padEls && i >= 0 && i < PADS ? this.padEls[i] : null; }
+    /** Nome curto no visor: "A.01" com bancos, "P.01" sem. */
+    padShow(s) { return (BANKS > 1 ? BANK_NAMES[Math.floor(s / PADS)] : "P") + "." + String(s % PADS + 1).padStart(2, "0"); }
+    padLabel(s) { return BANKS > 1 ? BANK_NAMES[Math.floor(s / PADS)] + String(s % PADS + 1).padStart(2, "0") : String(s + 1); }
+
+    setBank(b) {
+      b = clamp(b | 0, 0, BANKS - 1);
+      this.st.bank = b;
+      this.endMfxPick();
+      this.flash("b-" + BANK_NAMES[b], "pad");
+      this.renderPads();
+      this.renderButtons();
+      this.dirty();
+    }
+    /** Banco anterior (-1) ou proximo (+1), dando a volta. */
+    bankStep(d) { if (BANKS > 1) this.setBank((this.st.bank + d + BANKS) % BANKS); }
 
     makeFileInput() {
       const inp = document.createElement("input");
@@ -266,7 +332,7 @@ window.RJ = window.RJ || {};
       }
       this.applyAll();
       this.render();
-      this.flash("b0.1", null, 900);
+      this.flash(this.version, null, 900);
     }
 
     /** O grafo fixo: pads e entrada no Bus 1, Mute, Bus 2, Volume e a saida do host. */
@@ -350,7 +416,8 @@ window.RJ = window.RJ || {};
       st.sendRj = d.sendRj === undefined ? 1 : clamp(+d.sendRj || 0, 0, 2);
       st.send950 = d.send950 === undefined ? 1 : clamp(+d.send950 || 0, 0, 2);
       st.bpm = clamp(Math.round(+st.bpm) || 90, 40, 240); st.roll = clamp(st.roll | 0, 0, ROLLS.length - 1);
-      st.bus = st.bus === 2 ? 2 : 1; st.cur = clamp(st.cur | 0, 0, PADS - 1);
+      st.bus = st.bus === 2 ? 2 : 1; st.cur = clamp(st.cur | 0, 0, SLOTS - 1);
+      st.bank = clamp(d.bank | 0, 0, BANKS - 1);
       st.hold = !!st.hold; st.mute = !!st.mute;
       st.lofi = d.lofi === true;
       st.lofiBits = clamp(Math.round(+d.lofiBits) || RJ.D4_LOFI.bits, RJ.D4_LOFI.minBits, RJ.D4_LOFI.maxBits);
@@ -410,7 +477,12 @@ window.RJ = window.RJ || {};
 
     /* =========================================================== samples */
 
-    emptyPad() { return this.buf.findIndex(b => !b); }
+    /** O primeiro pad vazio, comecando pelo banco atual. */
+    emptyPad() {
+      const b0 = this.st.bank * PADS;
+      for (let k = 0; k < SLOTS; k++) { const s = (b0 + k) % SLOTS; if (!this.buf[s]) return s; }
+      return -1;
+    }
 
     /** Carrega um arquivo de audio no pad i (estereo, ate 2 canais). */
     async loadFile(i, file) {
@@ -430,7 +502,7 @@ window.RJ = window.RJ || {};
       const name = String(file.name || "SAMPLE").replace(/\.[^.]+$/, "").slice(0, 40);
       this.setBuffer(i, b, name, true);
       this.st.cur = i;
-      this.flash("P." + String(i + 1).padStart(2, "0"), "pad");
+      this.flash(this.padShow(i), "pad");
       this.render();
     }
 
@@ -467,14 +539,18 @@ window.RJ = window.RJ || {};
 
     /* =========================================================== pads */
 
+    /** i: o pad da tela (0 a pads - 1), no banco atual. */
     padDown(i, vel = 1) {
       if (!this.on) return;
+      const t = i;
+      i = this.slotOf(t);
+      this.downSlot[t] = i;
       this.held.add(i);
       if (this.shift || this.shiftKey) { this.shiftUsed(); this.pickFile(i); return; }
-      if (this.mfxPick && i < 4) { this.pickMfx(i + 1); return; }
+      if (this.mfxPick && t < 4) { this.pickMfx(t + 1); return; }
       this.st.cur = i;
       this.last = { pad: i, vel };
-      this.flash("P." + String(i + 1).padStart(2, "0"), "pad");
+      this.flash(this.padShow(i), "pad");
       const p = this.st.pads[i];
       // Loop sem Gate: o mesmo pad de novo para o loop
       if (p.loop && !p.gate && this.voice[i]) { this.stopVoice(i); this.renderModes(); return; }
@@ -483,7 +559,10 @@ window.RJ = window.RJ || {};
       this.dirty();
     }
 
-    padUp(i) {
+    padUp(t) {
+      // solta o pad que este botao apertou (mesmo que o banco tenha mudado no meio)
+      const i = this.downSlot[t] >= 0 ? this.downSlot[t] : this.slotOf(t);
+      this.downSlot[t] = -1;
       this.held.delete(i);
       const p = this.st.pads[i];
       if (p.gate && !this.st.hold && !(this.roll && this.roll.pad === i)) this.stopVoice(i);
@@ -507,8 +586,7 @@ window.RJ = window.RJ || {};
       const v = { src, g, t };
       this.voice[i] = v;
       src.onended = () => { if (this.voice[i] === v) { this.voice[i] = null; this.renderPads(); } g.disconnect(); };
-      const el = this.padEls[i];
-      const lit = () => { if (this.voice[i] === v) el.classList.add("hit"); };
+      const lit = () => { const el = this.elOf(i); if (this.voice[i] === v && el) el.classList.add("hit"); };
       if (t - ctx.currentTime > 0.01) setTimeout(lit, (t - ctx.currentTime) * 1000); else lit();
     }
 
@@ -520,10 +598,11 @@ window.RJ = window.RJ || {};
       if (t <= ctx.currentTime + 0.001) RJ.d4Glide(v.g.gain, 0, ctx, 0.003);
       else { v.g.gain.cancelScheduledValues(t); v.g.gain.setTargetAtTime(0, t, 0.003); }
       try { v.src.stop(t + 0.03); } catch (e) { /* ja parou */ }
-      if (this.padEls) this.padEls[i].classList.remove("hit");
+      const el = this.elOf(i);
+      if (el) el.classList.remove("hit");
     }
 
-    stopAll() { for (let i = 0; i < PADS; i++) this.stopVoice(i); this.stopRoll(); }
+    stopAll() { for (let i = 0; i < SLOTS; i++) this.stopVoice(i); this.stopRoll(); }
 
     pickFile(i) {
       this.pickPad = i;
@@ -792,7 +871,7 @@ window.RJ = window.RJ || {};
       if (this.confirmDel && performance.now() - this.confirmDel < 3000) {
         this.confirmDel = 0;
         this.clearPad(this.st.cur);
-        this.flash("P." + String(this.st.cur + 1).padStart(2, "0"), "pad");
+        this.flash(this.padShow(this.st.cur), "pad");
         return;
       }
       if (this.rec) { this.stopRec(); return; }
@@ -837,11 +916,11 @@ window.RJ = window.RJ || {};
         const f = Math.min(Math.floor(ctx.sampleRate * 0.003), len >> 1);
         for (let k = 0; k < f; k++) { d[k] *= k / f; d[len - 1 - k] *= k / f; }
       }
-      this.setBuffer(r.pad, b, "RESAMPLE " + (r.pad + 1), true);
-      this.st.pads[r.pad] = Object.assign(newPad(), { name: "RESAMPLE " + (r.pad + 1) });
+      this.setBuffer(r.pad, b, "RESAMPLE " + this.padLabel(r.pad), true);
+      this.st.pads[r.pad] = Object.assign(newPad(), { name: "RESAMPLE " + this.padLabel(r.pad) });
       this.st.cur = r.pad;
       this.dirty();
-      this.flash("P." + String(r.pad + 1).padStart(2, "0"), "pad");
+      this.flash(this.padShow(r.pad), "pad");
       this.render();
     }
 
@@ -926,6 +1005,7 @@ window.RJ = window.RJ || {};
     led(id, on, blink = false) {
       const b = this.btn[id];
       if (!b) return;
+      b.classList.toggle("lit", !!(this.on && on));   // face nova: a tecla inteira acende
       const box = b.closest(".d4-fxk, .r42-bk");
       const l = box && box.querySelector("i.led");
       if (l) { l.classList.toggle("on", !!(this.on && (on || blink))); l.classList.toggle("blink", !!(this.on && blink && !on)); }
@@ -936,10 +1016,14 @@ window.RJ = window.RJ || {};
       const st = this.st, b = st.bus, other = b === 1 ? 2 : 1;
       const cur = st.fx[b], oth = st.fx[other];
       const fxBtn = id => (RJ.D4FX.byId(id) && RJ.D4FX.byId(id).mfx ? "mfx" : id);
+      const face = this.root && this.root.dataset.face === "dcx";
       ["filter", "isolator", "delay", "vinyl", "djfx", "mfx"].forEach(k => {
+        const el = this.btn["fx-" + k];
+        if (!el) return;
         const on = cur && fxBtn(cur) === k, bl = oth && fxBtn(oth) === k;
         this.led("fx-" + k, on, bl);
-        this.btn["fx-" + k].classList.toggle("down", !!(this.on && on) || !!this.btn["fx-" + k].dataset.press);
+        // face nova: .down so enquanto o dedo aperta (aceso e .lit); a estavel afunda a tecla ligada
+        el.classList.toggle("down", (!face && !!(this.on && on)) || !!el.dataset.press);
       });
       this.led("bus-1", b === 1, b !== 1 && !!st.fx[1]);
       this.led("bus-2", b === 2, b !== 2 && !!st.fx[2]);
@@ -947,14 +1031,21 @@ window.RJ = window.RJ || {};
       this.led("hold", st.hold);
       this.led("subpad", !!this.roll);
       this.led("resample", !!this.rec, !!this.rec);
-      if (this.rec) { const l = this.btn.resample.closest(".r42-bk").querySelector("i.led"); l.classList.add("blink"); }
+      if (this.btn.resample) {
+        this.btn.resample.classList.toggle("blink", !!(this.on && this.rec));
+        const bx = this.btn.resample.closest(".r42-bk"), l = bx && bx.querySelector("i.led");
+        if (this.rec && l) l.classList.add("blink");
+      }
+      this.led("in-source", this.src !== "off");
+      for (let k = 0; k < BANKS && BANKS > 1; k++) this.led("bank-" + BANK_NAMES[k].toLowerCase(), k === st.bank);
       this.renderModes();
       // teclas que ficam "presas": Set-up e Shift
-      this.btn.setup.classList.toggle("down", this.setup || !!this.btn.setup.dataset.press);
-      this.btn.shift.classList.toggle("down", this.shift || this.shiftKey || !!this.btn.shift.dataset.press);
-      ["bus-1", "bus-2", "mute", "hold", "subpad", "resample", "gate", "loop", "reverse", "velocity", "in-source"].forEach(id => {
+      if (this.btn.setup) this.btn.setup.classList.toggle("down", this.setup || !!this.btn.setup.dataset.press);
+      if (this.btn.shift) this.btn.shift.classList.toggle("down", this.shift || this.shiftKey || !!this.btn.shift.dataset.press);
+      Object.keys(this.btn).forEach(id => {
+        if (id.startsWith("fx-") || id === "setup" || id === "shift") return;
         const el = this.btn[id];
-        if (el) el.classList.toggle("down", !!el.dataset.press);
+        el.classList.toggle("down", !!el.dataset.press);
       });
       // entrada
       const srcs = this.sources();
@@ -974,11 +1065,12 @@ window.RJ = window.RJ || {};
 
     renderPads() {
       if (!this.padEls) return;
-      this.padEls.forEach((el, i) => {
-        el.parentNode.classList.toggle("used", !!this.buf[i]);
-        el.classList.toggle("hit", !!this.voice[i] || (this.mfxPick && i < 4));
+      this.padEls.forEach((el, t) => {
+        const i = this.slotOf(t);
+        (el.closest(".pcol") || el).classList.toggle("used", !!this.buf[i]);
+        el.classList.toggle("hit", !!this.voice[i] || (this.mfxPick && t < 4));
         el.title = this.st.pads[i].name || "";
-        el.setAttribute("aria-label", "Pad " + (i + 1) + (this.st.pads[i].name ? ": " + this.st.pads[i].name : this.buf[i] ? "" : " (vazio)"));
+        el.setAttribute("aria-label", "Pad " + this.padLabel(i) + (this.st.pads[i].name ? ": " + this.st.pads[i].name : this.buf[i] ? "" : " (vazio)"));
       });
     }
 
@@ -992,4 +1084,5 @@ window.RJ = window.RJ || {};
   };
 
   RJ.D404.VERSION = VERSION;
+  RJ.D404.PADS = PADS; RJ.D404.BANKS = BANKS; RJ.D404.SLOTS = SLOTS;
 })();

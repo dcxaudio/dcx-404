@@ -1,0 +1,182 @@
+/* DCX-404, face nova (Figma "DX 404 - FINAL", frame 20:3735 "DCX 404 - CINZA" e
+ * "DCX 404 · Componentes e estados" 22:1521). Cada peca fica na posicao do Figma
+ * (origem no canto do frame de 660 x 988). Estados das teclas: .down = Pressionado,
+ * .lit (ou .hit nos pads) = Aceso.
+ * Fontes embutidas (OFL, licencas em ../fonts): Roboto Condensed, Inter e Russo One. */
+
+@font-face { font-family: "DX Roboto Condensed"; font-style: normal; font-weight: 700; font-display: block; src: url(../fonts/roboto-condensed-latin.woff2) format("woff2"); }
+@font-face { font-family: "DX Roboto Condensed"; font-style: italic; font-weight: 700; font-display: block; src: url(../fonts/roboto-condensed-italic-latin.woff2) format("woff2"); }
+@font-face { font-family: "DX Inter"; font-style: normal; font-weight: 100 900; font-display: block; src: url(../fonts/inter-latin.woff2) format("woff2"); }
+@font-face { font-family: "DX Inter"; font-style: italic; font-weight: 100 900; font-display: block; src: url(../fonts/inter-italic-latin.woff2) format("woff2"); }
+@font-face { font-family: "DX Russo One"; font-style: normal; font-weight: 400; font-display: block; src: url(../fonts/russo-one-latin.woff2) format("woff2"); }
+
+.dx {
+  /* cores do Figma (variable_defs) */
+  --dx-aloj: #222321;            /* edicao-time-bpm/alojamento */
+  --dx-borda: #5a5d61;           /* borda-do-elastomero */
+  --dx-borda-on: #76232b;        /* borda-do-elastomero-3 */
+  --dx-borda-line: #0d100e;      /* borda-do-elastomero-2 */
+  --dx-sup-line: #b9bdc1;        /* superficie-do-elastomero */
+  --dx-sup-1: #adb1b7; --dx-sup-2: #979ba2;
+  --dx-on-line: #f38c91;         /* pad-7/superficie-do-elastomero */
+  --dx-on-1: #ef7b80; --dx-on-2: #cc626e;
+  --dx-ink: #30312f;             /* texto-marcacao */
+  --dx-ink-on: #5f262b;          /* texto-marcacao-2 */
+  --dx-ink-fx-on: #692b34;       /* funcao-mfx/texto-marcacao */
+  --dx-label: #222321;
+  --dx-navy: #292c4d;            /* group-10/subtract */
+  --dx-panel: #929899;           /* painel/dcx-404-cinza */
+  --dx-drop: 0 2px 3px 0 rgba(16, 23, 18, .2);         /* efeitos/alojamento-circular */
+  --dx-inner: inset 0 2px 3px 0 rgba(23, 27, 23, .5);  /* efeitos/superficie-moldada */
+  --dx-seg-off: #42251f; --dx-seg-on: #f53925;
+
+  position: relative;
+  width: 660px; height: 988px;
+  flex: none;
+  border-radius: 16px;
+  overflow: hidden;
+  background-image: linear-gradient(155.9181698057704deg, rgb(209, 214, 224) 9.0187%, rgb(174, 177, 184) 113.07%);
+  color: var(--dx-ink);
+  font-family: "DX Inter", system-ui, sans-serif;
+  -webkit-user-select: none; user-select: none;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.dx img { display: block; max-width: none; pointer-events: none; -webkit-user-drag: none; }
+.dx button { margin: 0; padding: 0; border: 0; background: none; font: inherit; color: inherit; }
+.dx [hidden] { display: none !important; }
+
+/* pecas soltas: posicao do Figma */
+.dx-p, .dx-lb, .dx-k, .dx-fk, .dx-knob, .dx-tap, .dx-mic, .dx-peak, .dx-visor, .dx-list, .dx-foot { position: absolute; left: var(--x); top: var(--y); }
+.dx-pads { position: absolute; inset: 0; pointer-events: none; }
+.dx-pads > * { pointer-events: auto; }
+
+/* ---------------------------------------------------------------- rotulos impressos */
+.dx-lb { transform: translate(-50%, -50%); white-space: nowrap; line-height: .98; text-align: center; color: var(--dx-label); letter-spacing: -.4px; pointer-events: none; }
+.dx-l8 { font: 700 8px/.98 "DX Inter", sans-serif; }
+.dx-l8i { font: italic 800 8px/.98 "DX Inter", sans-serif; }
+.dx-l14 { font: 800 14px/.98 "DX Inter", sans-serif; }
+.dx-l16 { font: 800 16px/.98 "DX Inter", sans-serif; }
+.dx-l15 { font: 700 15px/.98 "DX Inter", sans-serif; color: var(--dx-panel); }
+.dx-navy { color: var(--dx-navy); }
+
+.dx-foot { width: 399px; height: 14px; display: flex; align-items: center; gap: 4px; pointer-events: none; }
+.dx-foot i { flex: 1 0 0; min-width: 1px; height: 0; position: relative; }
+.dx-foot i img { position: absolute; left: 0; top: -2px; width: 100%; height: 2px; }
+.dx-foot span { flex: none; font: 700 14px/.98 "DX Inter", sans-serif; letter-spacing: -.4px; color: #292c2d; white-space: nowrap; }
+
+.dx-list { margin: 0; padding: 0; list-style: none; width: 123.882px; height: 226px; font: 600 8px/normal "DX Inter", sans-serif; color: #000; white-space: nowrap; pointer-events: none; }
+.dx-list li { position: absolute; }
+
+.dx-rect5 { width: 58px; height: 17px; border-radius: 5px; background: var(--dx-navy); }
+.dx-rect6 { width: 30px; height: 43px; background: var(--dx-aloj); }
+.dx-grade { width: 38px; height: 60px; }
+.dx-grade img { position: absolute; left: 0; top: 0; }
+.dx-grade::after { content: ""; position: absolute; inset: 0; border: 4px solid #3d4260; border-radius: 4px; box-sizing: border-box; }
+
+/* ---------------------------------------------------------------- teclas de elastomero (CSS) */
+/* Alojamento / Borda do elastomero / Superficie do elastomero, como no Figma */
+.dx-k { width: var(--w); height: var(--h); cursor: pointer; --r1: 6px; --r2: 4px; --r3: 3px; }
+.dx-k.dx-pad { --r1: 5px; --r2: 3px; --r3: 2px; }
+.dx-k > i { position: absolute; display: block; box-sizing: border-box; }
+.dx-k-a { left: 0; top: 0; width: var(--w); height: var(--h); border-radius: var(--r1); background: var(--dx-aloj); box-shadow: var(--dx-drop); }
+.dx-k-b { left: 2px; top: 2px; width: calc(var(--w) - 4px); height: calc(var(--h) - 5px); border-radius: var(--r2); background: var(--dx-borda); border: 1px solid var(--dx-borda-line); }
+.dx-k-s { left: 4px; top: 3px; width: calc(var(--w) - 8px); height: calc(var(--h) - 7px); border-radius: var(--r3); border: .6px solid var(--dx-sup-line); background: linear-gradient(to bottom, var(--dx-sup-1), var(--dx-sup-2)); }
+.dx-k-t {
+  position: absolute; left: calc(var(--w) / 2); top: var(--ty); width: calc(var(--w) - 10px);
+  transform: translate(-50%, -50%); text-align: center; white-space: nowrap;
+  font-family: "DX Roboto Condensed", sans-serif; font-weight: 700; font-style: normal;
+  line-height: .98; letter-spacing: -.2px; color: var(--dx-ink); pointer-events: none;
+}
+.dx-pad .dx-k-t { letter-spacing: -.6px; }
+.dx-k-t.dx-num { font-family: "DX Russo One", sans-serif; font-weight: 400; }
+/* SOURCE: cartucho impresso escuro com o texto claro */
+.dx-src-cart { left: 10px; top: 10px; width: 66px; height: 54px; border-radius: 1px; background: #343735; }
+.dx-src .dx-k-t { color: var(--dx-sup-1); }
+
+/* Aceso */
+.dx-k.lit .dx-k-b, .dx-k.hit .dx-k-b { background: var(--dx-borda-on); }
+.dx-k.lit .dx-k-s, .dx-k.hit .dx-k-s { border-color: var(--dx-on-line); background: linear-gradient(to bottom, var(--dx-on-1), var(--dx-on-2)); }
+.dx-k.lit .dx-k-t, .dx-k.hit .dx-k-t { color: var(--dx-ink-on); }
+/* Pressionado: sem sombra externa, sombra interna na superficie */
+.dx-k.down .dx-k-a { box-shadow: none; }
+.dx-k.down .dx-k-s { box-shadow: var(--dx-inner); }
+/* Resample gravando: pisca aceso */
+.dx-k.blink .dx-k-b { animation: dx-blink-b .5s steps(1) infinite; }
+.dx-k.blink .dx-k-s { animation: dx-blink-s .5s steps(1) infinite; }
+@keyframes dx-blink-b { 50% { background: var(--dx-borda); } }
+@keyframes dx-blink-s { 50% { border-color: var(--dx-sup-line); background: linear-gradient(to bottom, var(--dx-sup-1), var(--dx-sup-2)); } }
+.dx-pad.drop .dx-k-s { outline: 2px dashed var(--dx-navy); outline-offset: -4px; }
+
+/* ---------------------------------------------------------------- teclas de funcao (SVG do Figma, 4 variantes) */
+.dx-fk { width: 90px; height: 54px; cursor: pointer; }
+.dx-fk img { position: absolute; }
+.dx-fk-a { left: -3px; top: -1px; }
+.dx-fk-ad { left: 0; top: 0; display: none !important; }
+.dx-fk-s { left: 3px; top: 3px; display: none !important; }
+.dx-fk .s0 { display: block !important; }
+.dx-fk.down .dx-fk-a { display: none !important; }
+.dx-fk.down .dx-fk-ad { display: block !important; }
+.dx-fk.down .s0, .dx-fk.lit .s0 { display: none !important; }
+.dx-fk.down:not(.lit) .s1 { display: block !important; }
+.dx-fk.lit:not(.down) .s2 { display: block !important; }
+.dx-fk.lit.down .s3 { display: block !important; }
+.dx-fk-t {
+  position: absolute; top: 26px; transform: translate(-50%, -50%); text-align: center; white-space: nowrap;
+  font: italic 700 12px/.95 "DX Roboto Condensed", sans-serif; letter-spacing: -.3px; color: var(--dx-ink); pointer-events: none;
+}
+.dx-fk.lit .dx-fk-t { color: var(--dx-ink-fx-on); }
+
+/* ---------------------------------------------------------------- TAP TEMPO (SVG, 4 variantes) */
+.dx-tap { width: 66px; height: 66px; cursor: pointer; }
+.dx-tap img { position: absolute; }
+.dx-tap-a { left: -3px; top: -1px; }
+.dx-tap-ad { left: 0; top: 0; display: none !important; }
+.dx-tap-s { left: 3px; top: 3px; display: none !important; }
+.dx-tap .s0 { display: block !important; }
+.dx-tap.down .dx-tap-a { display: none !important; }
+.dx-tap.down .dx-tap-ad { display: block !important; }
+.dx-tap.down .s0, .dx-tap.lit .s0 { display: none !important; }
+.dx-tap.down:not(.lit) .s1 { display: block !important; }
+.dx-tap.lit:not(.down) .s2 { display: block !important; }
+.dx-tap.lit.down .s3 { display: block !important; }
+.dx-tap-t { position: absolute; left: 33px; top: 32.5px; width: 50px; transform: translate(-50%, -50%); text-align: center; font: 700 13px/.95 "DX Roboto Condensed", sans-serif; color: var(--dx-ink); pointer-events: none; }
+.dx-tap.lit .dx-tap-t { color: var(--dx-ink-on); }
+
+/* ---------------------------------------------------------------- MIC (Solto / Pressionado) e LED PEAK */
+.dx-mic { width: 30px; height: 30px; cursor: pointer; border-radius: 50%; }
+.dx-mic img { position: absolute; left: -3px; top: -1px; }
+.dx-mic .on, .dx-mic.down .off { display: none; }
+.dx-mic.down .on { display: block; }
+.dx-peak { width: 16px; height: 16px; }
+.dx-peak img { position: absolute; }
+.dx-peak .off { left: 0; top: 0; }
+.dx-peak .on { left: -2px; top: -2px; display: none; }
+.dx-peak.lit .on { display: block; }
+.dx-peak.lit .off { display: none; }
+
+/* ---------------------------------------------------------------- knob (gira a marca de posicao: -135 a +135 graus) */
+.dx-knob { width: 88px; height: 88px; border-radius: 50%; cursor: ns-resize; --a: -135deg; }
+.dx-knob img { position: absolute; }
+.dx-knob-p { position: absolute; left: 44px; top: 44px; width: 0; height: 0; transform: rotate(var(--a)); }
+.dx-knob-p i { position: absolute; left: -2px; top: -29px; width: 4px; height: 10px; border-radius: 1px; background: #eceee6; }
+.dx-knob:focus-visible { outline: 2px solid var(--dx-navy); outline-offset: 2px; }
+
+/* ---------------------------------------------------------------- visor BPM/VALUE */
+.dx-visor { width: 212px; height: 212px; pointer-events: none; }
+.dx-visor img { position: absolute; }
+.dx-visor-u, .dx-visor-m { position: absolute; left: 106px; margin: 0; transform: translateX(-50%); text-align: center; line-height: normal; }
+.dx-visor-u { top: 166px; width: 164px; font: 700 16px/normal "DX Roboto Condensed", sans-serif; letter-spacing: -.3px; color: #f1f2e8; }
+.dx-visor-m { top: 27px; width: 152px; font: 700 27px/normal "DX Inter", sans-serif; letter-spacing: -1.5px; color: #f2f3e9; }
+.dx-visor-al { position: absolute; left: 25px; top: 68px; width: 162px; height: 83px; box-sizing: border-box; background: #191a17; border: 2px solid #3f4038; }
+.dx-visor-ac { position: absolute; left: 29px; top: 72px; width: 154px; height: 75px; background: linear-gradient(to bottom, #201c14, #281c17 60%, #3d211c); }
+.dx-seg { position: absolute; left: 40px; top: 82px; width: 131px; height: 63px; display: flex; gap: 7px; }
+.dx-seg svg { display: block; flex: none; overflow: visible; }
+.dx-seg .dx-sg { fill: var(--dx-seg-off); }
+.dx-seg .dx-sg.on { fill: var(--dx-seg-on); filter: drop-shadow(0 0 2.5px rgba(255, 36, 28, .533)); }
+
+/* ---------------------------------------------------------------- MIDI Learn e pagina */
+body.learning .dx [data-learn] { outline: 1px dashed rgba(75, 138, 208, .8); outline-offset: 2px; }
+.dx-page { max-width: 760px; }
+.dx-scroll { display: flex; justify-content: center; }
+.dx-fit { flex: none; }

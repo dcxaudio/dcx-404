@@ -1,0 +1,22 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="216" height="216" viewBox="0 0 216 216" fill="none" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g id="Borda do visor &#194;&#183; Anel met&#195;&#161;lico">
+<g id="Corpo vazado">
+<use xlink:href="#stroke0_0_344" fill="url(#paint0_linear_0_344)"/>
+<mask id="stroke1_0_344" fill="white">
+<use xlink:href="#stroke0_0_344"/>
+</mask>
+<path d="M108 0C167.647 0 216 48.3532 216 108C216 167.647 167.647 216 108 216C48.3532 216 0 167.647 0 108C0 48.3532 48.3532 0 108 0ZM108 3C50.0101 3 3 50.0101 3 108C3 165.99 50.0101 213 108 213C165.99 213 213 165.99 213 108C213 50.0101 165.99 3 108 3Z" stroke-width="2" stroke="#929899" mask="url(#stroke1_0_344)"/>
+</g>
+</g>
+<defs>
+<linearGradient id="paint0_linear_0_344" x1="18.2678" y1="0" x2="18.2678" y2="36.5355" gradientUnits="userSpaceOnUse">
+<stop stop-color="#B0B6B8"/>
+<stop offset="0.08" stop-color="#E0E3E4"/>
+<stop offset="0.36" stop-color="#BDC3C6"/>
+<stop offset="0.65" stop-color="#D9DDDE"/>
+<stop offset="0.94" stop-color="#B8BFC1"/>
+<stop offset="1" stop-color="#E4E6E6"/>
+</linearGradient>
+<path id="stroke0_0_344" d="M108 0C167.647 0 216 48.3532 216 108C216 167.647 167.647 216 108 216C48.3532 216 0 167.647 0 108C0 48.3532 48.3532 0 108 0ZM108 3C50.0101 3 3 50.0101 3 108C3 165.99 50.0101 213 108 213C165.99 213 213 165.99 213 108C213 50.0101 165.99 3 108 3Z"/>
+</defs>
+</svg>

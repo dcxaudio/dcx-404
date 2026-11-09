@@ -1,0 +1,19 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="38" height="60" viewBox="0 0 38 60" fill="none" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g id="Grade vazada">
+<g id="Corpo vazado">
+<use xlink:href="#stroke0_0_309" fill="url(#paint0_linear_0_309)"/>
+<mask id="stroke1_0_309" fill="white">
+<use xlink:href="#stroke0_0_309"/>
+</mask>
+<path d="M34 0C36.2091 3.22128e-07 38 1.79086 38 4V56C38 58.2091 36.2091 60 34 60H4C1.79086 60 1.12747e-07 58.2091 0 56V4C0 1.79086 1.79086 1.61064e-08 4 0H34ZM9 38C7.89543 38 7 38.8954 7 40V42C7 43.1046 7.89543 44 9 44H29C30.1046 44 31 43.1046 31 42V40C31 38.8954 30.1046 38 29 38H9ZM9 26C7.89543 26 7 26.8954 7 28V30C7 31.1046 7.89543 32 9 32H29C30.1046 32 31 31.1046 31 30V28C31 26.8954 30.1046 26 29 26H9ZM9 14C7.89543 14 7 14.8954 7 16V18C7 19.1046 7.89543 20 9 20H29C30.1046 20 31 19.1046 31 18V16C31 14.8954 30.1046 14 29 14H9Z" stroke-width="2" stroke="#101210" mask="url(#stroke1_0_309)"/>
+</g>
+</g>
+<defs>
+<linearGradient id="paint0_linear_0_309" x1="3616.9" y1="0" x2="3616.9" y2="462963" gradientUnits="userSpaceOnUse">
+<stop stop-color="#444742"/>
+<stop offset="0.3" stop-color="#2C2F2A"/>
+<stop offset="1" stop-color="#171A16"/>
+</linearGradient>
+<path id="stroke0_0_309" d="M34 0C36.2091 3.22128e-07 38 1.79086 38 4V56C38 58.2091 36.2091 60 34 60H4C1.79086 60 1.12747e-07 58.2091 0 56V4C0 1.79086 1.79086 1.61064e-08 4 0H34ZM9 38C7.89543 38 7 38.8954 7 40V42C7 43.1046 7.89543 44 9 44H29C30.1046 44 31 43.1046 31 42V40C31 38.8954 30.1046 38 29 38H9ZM9 26C7.89543 26 7 26.8954 7 28V30C7 31.1046 7.89543 32 9 32H29C30.1046 32 31 31.1046 31 30V28C31 26.8954 30.1046 26 29 26H9ZM9 14C7.89543 14 7 14.8954 7 16V18C7 19.1046 7.89543 20 9 20H29C30.1046 20 31 19.1046 31 18V16C31 14.8954 30.1046 14 29 14H9Z"/>
+</defs>
+</svg>

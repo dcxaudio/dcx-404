@@ -1,0 +1,22 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g id="Assento &#194;&#183; Parafuso">
+<g id="Corpo vazado">
+<use xlink:href="#stroke0_0_305" fill="url(#paint0_linear_0_305)"/>
+<mask id="stroke1_0_305" fill="white">
+<use xlink:href="#stroke0_0_305"/>
+</mask>
+<path d="M12 0C18.6274 0 24 5.37258 24 12C24 18.6274 18.6274 24 12 24C5.37258 24 0 18.6274 0 12C0 5.37258 5.37258 0 12 0ZM12 6C8.68629 6 6 8.68629 6 12C6 15.3137 8.68629 18 12 18C15.3137 18 18 15.3137 18 12C18 8.68629 15.3137 6 12 6Z" stroke-width="2" stroke="#929899" mask="url(#stroke1_0_305)"/>
+</g>
+</g>
+<defs>
+<linearGradient id="paint0_linear_0_305" x1="416.667" y1="0" x2="416.667" y2="833.333" gradientUnits="userSpaceOnUse">
+<stop stop-color="#B0B6B8"/>
+<stop offset="0.08" stop-color="#E0E3E4"/>
+<stop offset="0.36" stop-color="#BDC3C6"/>
+<stop offset="0.65" stop-color="#D9DDDE"/>
+<stop offset="0.94" stop-color="#B8BFC1"/>
+<stop offset="1" stop-color="#E4E6E6"/>
+</linearGradient>
+<path id="stroke0_0_305" d="M12 0C18.6274 0 24 5.37258 24 12C24 18.6274 18.6274 24 12 24C5.37258 24 0 18.6274 0 12C0 5.37258 5.37258 0 12 0ZM12 6C8.68629 6 6 8.68629 6 12C6 15.3137 8.68629 18 12 18C15.3137 18 18 15.3137 18 12C18 8.68629 15.3137 6 12 6Z"/>
+</defs>
+</svg>

@@ -1,0 +1,10 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="68" height="68" viewBox="0 0 68 68" fill="none" xmlns="http://www.w3.org/2000/svg">
+<circle id="Ombro do knob" cx="34" cy="34" r="33.65" fill="url(#paint0_radial_0_468)" stroke-width="0.7" stroke="#343A2D"/>
+<defs>
+<radialGradient id="paint0_radial_0_468" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(23.8 15.64) rotate(51.4416) scale(60.0021)">
+<stop stop-color="#41463B"/>
+<stop offset="0.5" stop-color="#22291F"/>
+<stop offset="1" stop-color="#0F150E"/>
+</radialGradient>
+</defs>
+</svg>
