@@ -9,6 +9,8 @@
  * anterior e proximo (o mesmo lugar dos pads 13-16 do Arturia). Shift = Shift do 404.
  * MIDI padrao (Arturia Minilab3, canal 10): notas 36-47 pads do banco, 48 Hold,
  * 49 Sub Pad, 50 banco anterior, 51 proximo banco.
+ * "Abrir disquete/projeto" (na barra de cima, ou arrastar o arquivo para a pagina): abre o
+ * disquete do 404 (dcx-404.json) ou o projeto .zip do Studio com a mesma conversao (js/abrir.js).
  */
 (function () {
   "use strict";
@@ -83,6 +85,88 @@
     const power = document.getElementById("power");
     const on = () => { host.power(); power.classList.add("off"); };
     document.getElementById("power-btn").addEventListener("click", on);
+
+    // Abrir: o disquete do 404 (dcx-404.json) ou o projeto .zip do Studio, pelo botao na barra
+    // de cima ou arrastando o arquivo para a pagina (novo/js/abrir.js converte 16 pads -> A1-A12, B1-B4)
+    const bar = document.getElementById("learnbar");
+    const openBtn = document.createElement("button");
+    openBtn.type = "button"; openBtn.className = "d4-open-btn"; openBtn.textContent = "Abrir disquete/projeto";
+    openBtn.title = "Abre o disquete do DCX 404 (dcx-404.json) ou o projeto .zip do DCX Studio. Tambem da para arrastar o arquivo para a pagina.";
+    const openMsg = document.createElement("span");
+    openMsg.className = "d4-open-msg"; openMsg.setAttribute("aria-live", "polite");
+    const openInp = document.createElement("input");
+    openInp.type = "file"; openInp.accept = ".json,.zip,application/json,application/zip"; openInp.hidden = true;
+    bar.append(openBtn, openMsg, openInp);
+    let msgTimer = 0;
+    // aviso GRANDE e visivel no meio de cima da pagina (a barra de cima e pequena e a tela LIGAR a cobre)
+    const toast = document.createElement("div");
+    toast.className = "d4-toast"; toast.setAttribute("role", "status"); toast.setAttribute("aria-live", "polite"); toast.hidden = true;
+    document.body.appendChild(toast);
+    let toastTimer = 0;
+    const say = (t, err) => {
+      clearTimeout(msgTimer); clearTimeout(toastTimer);
+      openMsg.textContent = t; openMsg.classList.toggle("err", !!err);
+      toast.textContent = t; toast.classList.toggle("err", !!err); toast.hidden = !t;
+      if (!err) { msgTimer = setTimeout(() => { openMsg.textContent = ""; }, 12000); toastTimer = setTimeout(() => { toast.hidden = true; }, 8000); }
+      else toastTimer = setTimeout(() => { toast.hidden = true; }, 20000);
+    };
+    // pergunta na propria pagina (o confirm() do navegador pode ser bloqueado ou passar despercebido)
+    const ask = (t) => new Promise(res => {
+      clearTimeout(toastTimer);
+      toast.className = "d4-toast ask"; toast.hidden = false; toast.textContent = "";
+      const p = document.createElement("p"); p.textContent = t;
+      const ok = document.createElement("button"); ok.type = "button"; ok.textContent = "Abrir";
+      const no = document.createElement("button"); no.type = "button"; no.textContent = "Cancelar";
+      const done = v => { toast.hidden = true; toast.className = "d4-toast"; toast.textContent = ""; res(v); };
+      ok.addEventListener("click", () => done(true)); no.addEventListener("click", () => done(false));
+      toast.append(p, ok, no); ok.focus();
+    });
+    const until = (fn, ms) => new Promise((res, rej) => {
+      const t0 = performance.now();
+      (function tick() { if (fn()) res(); else if (performance.now() - t0 > ms) rej(new Error("O 404 nao ligou a tempo. Toque LIGAR e tente de novo.")); else setTimeout(tick, 50); })();
+    });
+    let busy = false;
+    async function openFile(f) {
+      if (busy) return;
+      busy = true;
+      try {
+        if (!/\.(json|zip)$/i.test(f.name || "") && !/json|zip/.test(f.type || "")) {
+          throw new Error("\"" + f.name + "\" nao e um disquete (.json) nem um projeto (.zip). Audio vai num pad.");
+        }
+        say("Abrindo \"" + f.name + "\"...");    // disquete grande leva alguns segundos
+        const { data, from } = await RJ.d4Open.parse(f);
+        if (!host.on) on();                       // o arquivo escolhido ou solto vale como o toque de ligar
+        await until(() => d404.loaded, 15000);    // o estado guardado ja entrou: o disquete vem por cima
+        if (d404.buf.some(Boolean) && !(await ask("Abrir o " + from + " troca os pads e efeitos desta pagina (a versao estavel nao muda). Continuar?"))) { say("Nada mudou."); return; }
+        const r = RJ.d4Open.apply(d404, data, d404.engine.ensure());
+        say((from === "projeto" ? "Projeto aberto (disquete do 404): " : "Disquete aberto: ") +
+          (r.pads ? r.pads + (r.pads === 1 ? " pad" : " pads") + " em " + r.banks.join(", ") : "sem samples") + ", efeitos e volume." +
+          (r.bad ? " " + r.bad + " sample(s) ilegivel(is) ficaram vazios." : "") +
+          (r.extra ? " " + r.extra + " pad(s) a mais que 60 ficaram de fora." : ""));
+      } catch (e) {
+        console.warn(e);
+        say(e.message || "Nao deu para abrir esse arquivo.", true);
+      } finally { busy = false; }
+    }
+    openBtn.addEventListener("click", () => { openInp.value = ""; openInp.click(); });
+    // a tela LIGAR cobre a barra de cima: o mesmo botao fica tambem nela
+    const powerOpen = document.createElement("button");
+    powerOpen.type = "button"; powerOpen.className = "d4-power-open"; powerOpen.textContent = "Abrir disquete/projeto";
+    power.appendChild(powerOpen);
+    powerOpen.addEventListener("click", () => { openInp.value = ""; openInp.click(); });
+    openInp.addEventListener("change", () => { const f = openInp.files[0]; if (f) openFile(f); });
+    // arrastar: .json/.zip abre (mesmo solto num pad); audio segue para o pad (o motor cuida);
+    // fora do 404 o navegador nao troca de pagina
+    const isDisk = f => f && (/\.(json|zip)$/i.test(f.name || "") || /json|zip/.test(f.type || ""));
+    const hasFiles = e => e.dataTransfer && Array.from(e.dataTransfer.types || []).includes("Files");
+    window.addEventListener("dragover", e => { if (hasFiles(e)) e.preventDefault(); });
+    window.addEventListener("drop", e => {
+      const f = e.dataTransfer && (e.dataTransfer.files || [])[0];
+      if (!f) return;
+      if (isDisk(f)) { e.preventDefault(); e.stopPropagation(); openFile(f); return; }
+      if (!root.contains(e.target)) { e.preventDefault(); say("Para abrir, solte o disquete (.json) ou o projeto (.zip). Audio vai num pad.", true); }
+    }, true);
+    RJ.d4OpenFile = openFile;   // para o QA (e o console): RJ.d4OpenFile(file)
 
     // teclado
     const held = new Set();

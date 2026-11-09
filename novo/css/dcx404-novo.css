@@ -180,3 +180,20 @@ body.learning .dx [data-learn] { outline: 1px dashed rgba(75, 138, 208, .8); out
 .dx-page { max-width: 760px; }
 .dx-scroll { display: flex; justify-content: center; }
 .dx-fit { flex: none; }
+
+/* ---------------------------------------------------------------- Abrir disquete/projeto (barra de cima, fora do painel) */
+.learnbar { flex-wrap: wrap; }
+.learnbar .d4-open-btn { cursor: pointer; }
+.d4-open-msg { font-size: 12px; line-height: 1.35; color: var(--page-ink); max-width: 46ch; }
+.d4-open-msg.err { color: #e0675a; }
+@media (prefers-color-scheme: light) { .d4-open-msg.err { color: #b3261e; } }
+
+/* aviso grande de abrir disquete/projeto (e a pergunta antes de trocar os pads) */
+.d4-toast { position: fixed; z-index: 70; left: 50%; top: 16px; transform: translateX(-50%); max-width: min(92vw, 560px);
+  padding: 12px 16px; border-radius: 8px; background: #f1f2e8; color: #222321; font: 700 14px/1.35 "Roboto Condensed", system-ui, sans-serif;
+  box-shadow: 0 8px 24px rgba(0,0,0,.45); text-align: center; }
+.d4-toast.err { background: #b3261e; color: #fff; }
+.d4-toast.ask p { margin: 0 0 10px; }
+.d4-toast.ask button { font: inherit; padding: 6px 16px; margin: 0 6px; border-radius: 4px; border: 1px solid #222321; background: #adb1b5; cursor: pointer; }
+.d4-toast[hidden] { display: none; }
+.d4-power-open { margin-top: 6px; padding: 8px 16px; border-radius: 4px; border: 1px solid rgba(255,255,255,.35); background: transparent; color: #ddd; font: 14px system-ui, sans-serif; cursor: pointer; }
