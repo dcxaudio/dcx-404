@@ -38,8 +38,40 @@
     const d404 = new RJ.D404(host.view("dcx404"));
     host.add("dcx404", d404, { label: "DCX-404", receive: f => d404.receive(f) });
     d404.build(root);
-    new RJ.LearnBar(host, { root, bar: document.getElementById("learnbar") });
+    const learnBar = new RJ.LearnBar(host, { root, bar: document.getElementById("learnbar") });
     const N = d404.padEls.length;
+
+    // Mapa MIDI copiado da estavel: atalhos de controles que a face nova nao tem (Bus 1/2, Mute, Velocity, Set-up, Shift,
+    // DJFX, Input Level, pads 13-16...) sao ignorados em silencio. Antes, uma copia intacta vai para "midimap.old" (uma vez);
+    // a barra avisa uma vez quantos ficaram sem lugar. O mapa guardado so perde esses atalhos num Learn novo (Save/Enter):
+    // ate la, qualquer gravacao do mapa devolve os antigos junto (nada se perde sem querer).
+    const L = host.learn, load0 = L.load.bind(L), persist0 = L.persist.bind(L), save0 = L.save.bind(L), import0 = L.importData.bind(L);
+    let dead = null;   // { tecla MIDI: atalho sem lugar } ainda guardados no mapa
+    L.load = async function () {
+      await load0();
+      const gone = Object.keys(L.map).filter(k => !L.targets.has(L.map[k] && L.map[k].t));
+      if (!gone.length) return;
+      dead = {};
+      gone.forEach(k => { dead[k] = L.map[k]; delete L.map[k]; });
+      try {
+        if (!(await L.store.get("midimap.old"))) { const raw = await L.store.get("midimap"); if (raw) await L.store.put("midimap.old", raw); }
+        if (!(await L.store.get("midimap.aviso"))) {
+          learnBar.msg = gone.length + (gone.length === 1 ? " atalho antigo sem lugar" : " atalhos antigos sem lugar");
+          learnBar.render();
+          await L.store.put("midimap.aviso", "1");
+        }
+      } catch (e) { console.warn(e); }
+    };
+    L.persist = function () {
+      if (!dead) return persist0();
+      const live = L.map;
+      L.map = Object.assign({}, dead, live);
+      try { persist0(); } finally { L.map = live; }
+    };
+    L.save = function () { if (L.sel && L.cand) dead = null; return save0(); };   // Learn novo: o mapa e regravado sem os antigos
+    L.importData = function (d) { dead = null; return import0(d); };
+    const clearAll0 = L.clearAll.bind(L);
+    L.clearAll = function () { dead = null; return clearAll0(); };   // "apagar tudo" apaga tambem os antigos (a copia fica no .old)
 
     // a tela de uma tecla 13-16: Hold/Sub Pad sao teclas do motor; bancos andam um
     const extraEl = x => (x.id ? root.querySelector(`[data-ctrl="${x.id}"]`) : root.querySelector(`[data-ctrl="bank-${"abcde"[(d404.st.bank + x.bank + 5) % 5]}"]`));

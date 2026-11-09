@@ -44,6 +44,8 @@ window.RJ = window.RJ || {};
   const REC_FREE = 0.5;            // s: com menos que isso livre, REC mostra "FuL"
   const ROLLS = [1, 1 / 2, 1 / 3, 1 / 4, 1 / 6, 1 / 8];  // Sub Pad: 1/4, 1/8, 1/8T, 1/16, 1/16T, 1/32
   const ROLL_SHOW = [" 4", " 8", "8t", "16", "16t", "32"];
+  const ROLL_NF = 3;               // face nova: o Sub Pad repete em 1/16 (fixo)
+  const SRC_SHOW = { off: "oFF", rj2000: "rJ", rj950: "950", mix: "Mix", line: "Lin" };
   const VELS = ["soft", "linear", "fixed"];
   const VEL_SHOW = { soft: "5UA", linear: "Lin", fixed: "127" };
   const LONG = 400;                // ms: segurar mais que isso = momentaneo (sem Hold)
@@ -623,6 +625,13 @@ window.RJ = window.RJ || {};
       const mf = RJ.D4FX.byId(st.mfx);
       if (!mf || !mf.make || !(this.nf ? mf.m : mf.mfx)) st.mfx = "reverb";
       [1, 2].forEach(b => { const id = RJ.D4FX.fromOld(d.fx && d.fx[b]); const fd = id && RJ.D4FX.byId(id); st.fx[b] = fd && fd.make && (this.nf || fd.n) ? id : null; });   // a estavel nao tem PITCH: um estado da face nova abre la sem ele
+      // face nova: um bus so (o Bus 1) e sem Mute (as teclas Bus 1/2 e Mute sairam do painel). O efeito do bus que estava
+      // escolhido (ou, se ele estava vazio, o do outro: o Stopper no Bus 2, por exemplo) vem para o Bus 1. Com o Bus 1 vazio
+      // o som e o mesmo: o Bus 2 so recebia a saida do Bus 1 (pads alvo e entrada). vel e roll ficam guardados (ignorados aqui)
+      if (this.nf) {
+        const keep = st.fx[st.bus] || st.fx[st.bus === 1 ? 2 : 1] || null;
+        st.fx = { 1: keep, 2: null }; st.bus = 1; st.mute = false;
+      }
       RJ.D4FX.forEach(f => {
         const p = d.params && (d.params[f.id] || (f.n && d.params[f.n]));
         if (Array.isArray(p)) st.params[f.id] = f.def.map((v, i) => (typeof p[i] === "number" ? clamp(p[i], 0, 1) : v));
@@ -822,7 +831,8 @@ window.RJ = window.RJ || {};
       src.buffer = pb ? (p.loop ? pb.loop : pb.one) : p.rev ? this.reversed(i) : this.buf[i];
       src.loop = p.loop;
       const g = ctx.createGain();
-      const amp = RJ.d4Velocity(this.st.vel, vel) * this.st.padLevel[i] * 1.25;
+      // face nova: a forca do toque nao muda o volume (manual p. 12; a tecla Velocity saiu): curva fixa no maximo
+      const amp = RJ.d4Velocity(this.nf ? "fixed" : this.st.vel, vel) * this.st.padLevel[i] * 1.25;
       g.gain.setValueAtTime(0, t);
       g.gain.linearRampToValueAtTime(amp, t + 0.002);
       src.connect(g);
@@ -964,14 +974,16 @@ window.RJ = window.RJ || {};
       const ctx = this.g.ctx;
       const r = { pad: i, vel, next: ctx.currentTime + 0.005, pressed: false };
       const tick = () => {
-        const step = ROLLS[this.st.roll] * 60 / this.st.bpm;
+        const step = ROLLS[this.rollIdx()] * 60 / this.st.bpm;
         while (r.next < ctx.currentTime + 0.09) { this.play(r.pad, r.vel, r.next); r.next += step; }
       };
       tick();
       r.timer = setInterval(tick, 20);
       this.roll = r;
-      this.flash(ROLL_SHOW[this.st.roll], "bpm");
+      this.flash(ROLL_SHOW[this.rollIdx()], "bpm");
     }
+    /** A divisao do Sub Pad. Face nova: 1/16 fixo (o manual nao tem ajuste; o Set-up saiu); o estado guarda o valor (st.roll). */
+    rollIdx() { return this.nf ? ROLL_NF : this.st.roll; }
 
     stopRoll() {
       const r = this.roll;
@@ -1201,6 +1213,8 @@ window.RJ = window.RJ || {};
       }
       if (this.sendPage()) return [this.st.sendRj / 2, this.st.send950 / 2, 0][k];
       if (this.setup) return [ (this.st.bpm - 40) / 200, this.st.roll / (ROLLS.length - 1), this.st.padLevel[this.st.cur] ][k];
+      if (this.sed && this.sed.global && k < 2) return k === 1 ? (this.st.bpm - BPM_MIN) / (BPM_MAX - BPM_MIN) : 0.5;
+      if (this.sed && this.sed.mode === "se" && k === 2 && this.srcLevelOn()) return this.srcLevelGet();
       if (this.sed && (this.sed.mode === "se" || k < 2)) return this.sedGet(k);
       const f = this.curFx();
       return f ? this.st.params[f.id][this.pk(f, k)] : 0.5;
@@ -1231,6 +1245,13 @@ window.RJ = window.RJ || {};
         if (k === 2) { this.st.padLevel[this.st.cur] = v; this.flash(String(Math.round(v * 127)), "pad"); }
         return;
       }
+      // TIME/BPM do 404 (face nova): CTRL 2 = BPM (40-240, a faixa do TAP TEMPO); CTRL 1 nao tem funcao aqui
+      if (this.sed && this.sed.global && k < 2) {
+        if (k === 1) { this.st.bpm = Math.round(BPM_MIN + v * (BPM_MAX - BPM_MIN)); this.applyBpm(); this.flash(String(this.st.bpm), "bpm"); }
+        else this.flash("---", "bpm", 600);
+        return;
+      }
+      if (this.sed && this.sed.mode === "se" && k === 2 && this.srcLevelOn()) { this.srcLevelSet(v); return; }
       if (this.sed && (this.sed.mode === "se" || k < 2)) { this.sedSet(k, v); return; }
       const f = this.curFx();
       if (!f) { this.flash("---", "fx"); return; }
@@ -1371,15 +1392,32 @@ window.RJ = window.RJ || {};
     sedPress(mode) {
       if (this.smp || this.delMode) return;   // REC ou DEL em curso: os knobs ficam com eles
       if (this.sed && this.sed.mode === mode) { this.sedExit(); return; }
-      if (!this.buf[this.st.cur]) { this.flash("EMP", "pad"); return; }
+      // face nova (o Set-up saiu): TIME/BPM sem sample para medir (pad atual vazio, ou SOURCE aceso e nada tocando) e o
+      // BPM do 404 no CTRL 2 (manual p. 45 e 14/34); START/END/LEVEL com SOURCE aceso: o CTRL 3 e o nivel da fonte (p. 17)
+      const glob = this.nf && mode === "tb" && (!this.buf[this.st.cur] || (this.src !== "off" && !this.playing()));
+      if (!this.buf[this.st.cur] && !glob && !(mode === "se" && this.srcLevelOn())) { this.flash("EMP", "pad"); return; }
       if (this.setup) this.toggleSetup(false);
       this.endMfxPick();
-      this.sed = { mode, pad: -1, base: null, knob: [0.5, 0.5] };
+      this.sed = { mode, pad: -1, base: null, knob: [0.5, 0.5], global: glob };
       this.sedSync();
       clearTimeout(this.flashTimer);
       this.render();
     }
     sedExit() { if (!this.sed) return; this.sed = null; clearTimeout(this.flashTimer); this.render(); }
+    /** Algum pad tocando (voz ou Sub Pad)? */
+    playing() { return !!this.roll || this.voice.some(Boolean); }
+
+    /** Face nova com SOURCE aceso: o CTRL 3 do START/END/LEVEL ajusta a fonte escolhida (manual p. 17, "volume da entrada"). */
+    srcLevelOn() { return this.nf && this.src !== "off"; }
+    /** rJ = envio do RJ-2000, 950 = envio do RJ-950 (0 a 2; 1 = igual ao direto); Lin e Mix = o nivel da entrada. */
+    srcLevelGet() { return this.src === "rj2000" ? this.st.sendRj / 2 : this.src === "rj950" ? this.st.send950 / 2 : this.st.inLevel; }
+    srcLevelSet(v) {
+      if (this.src === "rj2000") this.st.sendRj = v * 2;
+      else if (this.src === "rj950") this.st.send950 = v * 2;
+      else this.st.inLevel = v;
+      this.applyInput();
+      this.flash(String(Math.round(v * 127)), "pad");
+    }
 
     /** O ajuste fino comeca da posicao atual do pad atual (centro do knob = como esta; manual p. 29, 31). */
     sedSync() {
@@ -1918,7 +1956,8 @@ window.RJ = window.RJ || {};
     shiftDown() { this.shiftT = performance.now(); this.shiftHeldUsed = false; this.shift = !this.shift; this.renderCaps(); }
     shiftUp() { if (performance.now() - this.shiftT > LONG || this.shiftHeldUsed) this.shift = false; this.renderCaps(); }
     /** Shift do teclado do computador: vale enquanto a tecla esta apertada (nao arma o proximo botao). */
-    setShiftKey(on) { on = !!on; if (this.shiftKey === on) return; this.shiftKey = on; if (this.btn && this.btn.shift) { this.renderCaps(); this.renderButtons(); } }
+    // face nova: a tecla Shift saiu do painel; so o Shift do teclado (os knobs redesenham: Shift + Ctrl 1/2 = LO-FI)
+    setShiftKey(on) { on = !!on; if (this.shiftKey === on) return; this.shiftKey = on; if (this.btn && (this.btn.shift || this.nf)) { this.renderCaps(); this.renderButtons(); } }
     shiftUsed() { this.shiftHeldUsed = true; if (this.btn.shift && !this.btn.shift.dataset.press) this.shift = false; this.renderButtons(); }
 
     /** Resample: grava a saida com efeito (antes do Volume) no primeiro pad vazio. Shift + Resample apaga o pad escolhido. */
@@ -2023,7 +2062,7 @@ window.RJ = window.RJ || {};
       if (next !== "line") this.closeLine();
       this.applyInput();
       this.renderCaps();
-      this.flash({ off: "oFF", rj2000: "rJ", rj950: "950", mix: "Mix", line: "Lin" }[next]);
+      this.flash(SRC_SHOW[next]);
       this.renderButtons();
     }
 
@@ -2055,7 +2094,8 @@ window.RJ = window.RJ || {};
       // SAMPLE EDIT: START/END/LEVEL mostra "Edt" (sample sendo editado, p. 49); TIME/BPM mostra o BPM do sample
       if (this.sed) {
         const i = this.st.cur;
-        if (!this.buf[i]) this.drawDisplay("EMP", "pad");
+        if (this.sed.global) this.drawDisplay(String(this.st.bpm), "bpm");   // TIME/BPM do 404 (face nova)
+        else if (!this.buf[i]) this.drawDisplay(this.sed.mode === "se" && this.srcLevelOn() ? SRC_SHOW[this.src] : "EMP", "pad");
         else if (this.sed.mode === "se") this.drawDisplay("Edt", "pad");
         else this.drawDisplay(String(Math.round(this.sampleBpm(i))), "bpm");
         return;
