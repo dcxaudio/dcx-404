@@ -355,7 +355,7 @@ window.RJ = window.RJ || {};
     if (env && env.nf) return delayNf(ctx);
     const input = ctx.createGain(), output = ctx.createGain();
     const d = ctx.createDelay(4), fb = ctx.createGain(), tone = ctx.createBiquadFilter(), wet = ctx.createGain();
-    tone.type = "lowpass"; tone.frequency.value = 5000;
+    tone.type = "lowpass"; tone.frequency.value = 5000; tone.Q.value = -3.01; // Butterworth: sem o pico de +1 dB que, com feedback alto, fazia o laco passar de 1
     input.connect(output);
     input.connect(d); d.connect(tone).connect(fb).connect(d);
     d.connect(wet).connect(output);
