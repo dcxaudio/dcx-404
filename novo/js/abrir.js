@@ -5,6 +5,9 @@
  *   o disquete "cru" ({ state, pads }) e o projeto .zip do Studio (so le o dcx-404.json de dentro).
  *   Arquivo de outra maquina, zip sem o 404 ou arquivo que nao e disquete: erro com mensagem clara.
  * RJ.d4Open.apply(d404, data, ctx) -> { pads, banks }  troca estado e samples do 404 da pagina.
+ * RJ.d4Open.build(d404)            -> { blob, name, ... } o inverso: o disquete da pagina (60 pads, A1-E12)
+ *   no mesmo envelope dcx-disk que o parse le. O Studio (16 pads) abre os 16 primeiros (A1-A12, B1-B4)
+ *   e o estado; B5-E12 ficam de fora la.
  *
  * A conversao e a mesma da migracao automatica (solo.js): o pad guardado i do 404 estavel
  * vai para o pad guardado i da face nova, entao 1-12 viram A1-A12 e 13-16 viram B1-B4;
@@ -151,5 +154,59 @@
     return { pads, banks: [...banks], bad, extra };
   }
 
-  RJ.d4Open = { parse, apply, unwrap, readZip };
+  /* ================================================================ salvar (o inverso do apply) */
+
+  // Float32 -> base64 de Int16, o mesmo formato do dsp.floatToB64 (o Studio e o abrir leem com
+  // dsp.b64ToFloat = i16 / 0x8000), mas com a escala inversa exata (x 0x8000, arredondado): um sample
+  // que veio do disquete ou do navegador volta com os mesmos valores (o floatToB64 perde 1 bit nos positivos)
+  function f2b64(data) {
+    const i16 = new Int16Array(data.length);
+    for (let i = 0; i < data.length; i++) {
+      const v = Math.round(data[i] * 0x8000);
+      i16[i] = v > 32767 ? 32767 : v < -32768 ? -32768 : v;
+    }
+    const u8 = new Uint8Array(i16.buffer);
+    let s = "";
+    for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
+    return btoa(s);
+  }
+
+  const two = n => String(n).padStart(2, "0");
+  /** nome do arquivo com data e hora: dcx-404-novo-2026-11-09-1530-dcx-404.json (termina como o do Studio) */
+  function fileName(d) {
+    d = d || new Date();
+    return "dcx-404-novo-" + d.getFullYear() + "-" + two(d.getMonth() + 1) + "-" + two(d.getDate()) + "-" + two(d.getHours()) + two(d.getMinutes()) + "-" + DISK_FILE;
+  }
+
+  /**
+   * O disquete da pagina: o mesmo envelope do Studio (dcx-disk, machine "dcx404", data = { state, pads })
+   * que o parse le, com os 60 pads guardados (A1-E12). Devolve { blob, name, pads, banks, bytes }.
+   * O JSON vai em pedacos (um por pad) para um disquete grande nao virar um texto unico gigante.
+   */
+  function build(d404, opts) {
+    const o = opts || {};
+    const S = RJ.D404.SLOTS, P = RJ.D404.PADS;
+    const state = JSON.parse(d404.serialize());
+    const head = { format: "dcx-disk", version: 1, machine: "dcx404", name: LABEL.dcx404,
+      project: o.project || "DCX 404 (face nova)", saved: new Date().toISOString(),
+      layout: { pads: P, banks: RJ.D404.BANKS } };
+    const s0 = JSON.stringify(head);
+    const parts = [s0.slice(0, -1) + ',"data":{"state":' + JSON.stringify(state) + ',"pads":['];
+    let pads = 0;
+    const banks = new Set();
+    for (let i = 0; i < S; i++) {
+      const b = d404.buf[i];
+      if (i) parts.push(",");
+      if (!b) { parts.push("null"); continue; }
+      const ch = [];
+      for (let c = 0; c < Math.min(2, b.numberOfChannels); c++) ch.push(f2b64(b.getChannelData(c)));
+      parts.push(JSON.stringify({ name: (state.pads[i] && state.pads[i].name) || "", rate: b.sampleRate, ch }));
+      pads++; banks.add("ABCDE"[Math.floor(i / P)]);
+    }
+    parts.push("]}}");
+    const blob = new Blob(parts, { type: "application/json" });
+    return { blob, name: o.name || fileName(), pads, banks: [...banks], bytes: blob.size };
+  }
+
+  RJ.d4Open = { parse, apply, unwrap, readZip, build, fileName };
 })();

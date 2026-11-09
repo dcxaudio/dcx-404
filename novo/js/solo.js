@@ -11,6 +11,7 @@
  * 49 Sub Pad, 50 banco anterior, 51 proximo banco.
  * "Abrir disquete/projeto" (na barra de cima, ou arrastar o arquivo para a pagina): abre o
  * disquete do 404 (dcx-404.json) ou o projeto .zip do Studio com a mesma conversao (js/abrir.js).
+ * "Salvar disquete" (ao lado): baixa o disquete desta pagina (60 pads + estado, envelope dcx-disk).
  */
 (function () {
   "use strict";
@@ -96,7 +97,11 @@
     openMsg.className = "d4-open-msg"; openMsg.setAttribute("aria-live", "polite");
     const openInp = document.createElement("input");
     openInp.type = "file"; openInp.accept = ".json,.zip,application/json,application/zip"; openInp.hidden = true;
-    bar.append(openBtn, openMsg, openInp);
+    // Salvar: baixa o disquete desta pagina (60 pads A1-E12 + estado) que o Abrir e o Studio reabrem
+    const saveBtn = document.createElement("button");
+    saveBtn.type = "button"; saveBtn.className = "d4-open-btn d4-save-btn"; saveBtn.textContent = "Salvar disquete";
+    saveBtn.title = "Baixa o disquete do DCX 404 desta pagina (os 60 pads, A1-E12, efeitos, volume e nomes). O Abrir daqui e o DCX Studio reabrem (o Studio so tem 16 pads: A1-A12 e B1-B4).";
+    bar.append(openBtn, saveBtn, openMsg, openInp);
     let msgTimer = 0;
     // aviso GRANDE e visivel no meio de cima da pagina (a barra de cima e pequena e a tela LIGAR a cobre)
     const toast = document.createElement("div");
@@ -167,6 +172,30 @@
       if (!root.contains(e.target)) { e.preventDefault(); say("Para abrir, solte o disquete (.json) ou o projeto (.zip). Audio vai num pad.", true); }
     }, true);
     RJ.d4OpenFile = openFile;   // para o QA (e o console): RJ.d4OpenFile(file)
+
+    async function saveFile(opts) {
+      if (busy) return null;
+      busy = true;
+      try {
+        if (!host.on) on();
+        await until(() => d404.loaded, 15000);    // o estado e os samples guardados ja entraram
+        d404.abortRecs();                         // REC em espera/gravando: nao entra pela metade
+        say("Salvando o disquete...");
+        await new Promise(r => setTimeout(r, 30)); // deixa o aviso aparecer (disquete grande leva um tempo)
+        const r = RJ.d4Open.build(d404, opts);
+        if (!(opts && opts.noDownload)) RJ.dsp.downloadBlob(r.blob, r.name);
+        const mb = r.bytes / 1048576;
+        say("Disquete salvo: \"" + r.name + "\" (" + (r.pads ? r.pads + (r.pads === 1 ? " pad" : " pads") + " em " + r.banks.join(", ") : "sem samples") +
+          ", " + (mb < 0.1 ? Math.max(1, Math.round(r.bytes / 1024)) + " KB" : mb.toFixed(1).replace(".", ",") + " MB") + ").");
+        return r;
+      } catch (e) {
+        console.warn(e);
+        say(e.message || "Nao deu para salvar o disquete.", true);
+        return null;
+      } finally { busy = false; }
+    }
+    saveBtn.addEventListener("click", () => saveFile());
+    RJ.d4SaveFile = saveFile;   // para o QA (e o console): RJ.d4SaveFile({ noDownload: true }) -> { blob, name }
 
     // teclado
     const held = new Set();
