@@ -192,6 +192,7 @@ window.RJ = window.RJ || {};
     RJ.D4FX.forEach(f => { params[f.id] = f.def.slice(); });
     return {
       format: "dcx404", v: 1,
+      pv: 2,   // versao dos padroes dos efeitos: 2 = PITCH com BALANCE todo no efeito (Onda 1.5b); sem o campo = estado de antes
       vol: 0.8, inLevel: 0.8, sendRj: 1, send950: 1, vel: "soft", bpm: 90, roll: 3, padLevel: new Array(SLOTS).fill(PAD_LEVEL0),
       bus: 1, fx: { 1: null, 2: null }, mfx: "reverb", params,
       hold: false, mute: false, cur: 0, bank: 0,
@@ -478,6 +479,7 @@ window.RJ = window.RJ || {};
         } catch (e) { console.warn("Estado do 404 ilegivel, comecando limpo", e); }
         await this.loadSamples();
         this.loaded = true;
+        if (this.pvOld) { this.pvOld = false; this.dirty(); }
       }
       this.prepSoon();   // os pads com start/end ou Time Modify ficam prontos para tocar
       this.applyAll();
@@ -625,6 +627,11 @@ window.RJ = window.RJ || {};
         const p = d.params && (d.params[f.id] || (f.n && d.params[f.n]));
         if (Array.isArray(p)) st.params[f.id] = f.def.map((v, i) => (typeof p[i] === "number" ? clamp(p[i], 0, 1) : v));
       });
+      // estado/disquete de antes da Onda 1.5b: o PITCH comecava com BALANCE no meio (0,5) e o estado guardou esse valor;
+      // com ele toca o direto inteiro junto da copia afinada (que vem uns ms depois): som original de fundo, "atraso",
+      // filtro pente. Se o bAL ainda esta exatamente no padrao antigo (ninguem girou), vai para o novo (todo no efeito)
+      if (!(d.pv >= 2) && st.params.pitch && st.params.pitch[2] === 0.5) st.params.pitch[2] = 1;
+      this.pvOld = !(d.pv >= 2);   // o boot grava logo o estado migrado (sem esperar um toque): o guardado deixa de ter o 0,5
       if (Array.isArray(d.padLevel)) st.padLevel = st.padLevel.map((v, i) => (typeof d.padLevel[i] === "number" ? clamp(d.padLevel[i], 0, 1) : v));
       if (Array.isArray(d.pads)) st.pads = st.pads.map((p, i) => {
         const x = d.pads[i] || {};

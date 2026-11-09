@@ -157,16 +157,91 @@ window.RJ = window.RJ || {};
   registerProcessor("d4-stopper", D4Stopper);
 
   /* Lo-fi / Bit Crush: segura a amostra por "down" amostras (taxa menor) e reduz
-     para "bits" bits. */
+     para "bits" bits.
+     mode 0 (a estavel e o LO-FI global, igual a sempre): a amostra so e tomada numa amostra inteira,
+     entao com "down" fracionario o tempo entre tomadas pula (3, 4, 4, 3...) e esse tremor de relogio
+     vira um chiado largo (-36 dB num seno com down 3,64): era o "chiado por cima".
+     mode 1 (MFX 14 da face nova): relogio uniforme. A tomada cai no instante exato (entre duas
+     amostras, lido por interpolacao linear) e a amostra onde o degrau acontece leva a media dos dois
+     degraus na proporcao certa. Sobra so o que e do Lo-Fi: o espelhamento da taxa (metalico) e a
+     quantizacao (que acompanha o sinal). Nada de dither. 1 amostra de atraso.
+     mode 1, Onda 1.6 ("radio antigo"): antes da reducao, a faixa de um radio: passa-altas em 300 Hz e passa-baixas
+     em 3 kHz (2 polos cada, quedas suaves de 12 dB/oit.), um grao bem baixo que segue o sinal (-34 dB do envelope:
+     no silencio, silencio) e uma saturacao leve (tanh). Tudo antes do passa-baixa anti-espelho: o que a saturacao
+     cria acima da taxa nova tambem nao dobra. rAt, bit e o FLt (fora do worklet) continuam em volta. */
   class D4Crush extends AudioWorkletProcessor {
     static get parameterDescriptors() { return [
       { name: "bits", defaultValue: 8, minValue: 1, maxValue: 16, automationRate: "k-rate" },
       { name: "down", defaultValue: 4, minValue: 1, maxValue: 64, automationRate: "k-rate" },
+      { name: "mode", defaultValue: 0, minValue: 0, maxValue: 1, automationRate: "k-rate" },
     ]; }
-    constructor() { super(); this.h = [0, 0]; this.c = 0; }
+    constructor() {
+      super(); this.h = [0, 0]; this.c = 0; this.t = 0; this.xp = [0, 0];
+      this.zd = 0; this.zq = null;                        // mode 1: o "down" dos coeficientes e os coeficientes
+      this.zs = [new Float64Array(28), new Float64Array(28)];   // estados dos 7 biquads (radio 2, antes 4, depois 1) por canal
+      this.rq = [D4Crush.bh(300, Math.SQRT1_2), D4Crush.bq(3000, 0.8)];   // mode 1: a faixa do radio (passa-altas, passa-baixas)
+      this.env = [0, 0]; this.rs = 0x2545F491;                            // mode 1: envelope do grao e o sorteio dele
+    }
+    // passa-baixa RBJ em fc (Hz) com Q
+    static bq(fc, q) {
+      const w0 = 2 * Math.PI * Math.min(fc, 0.45 * sampleRate) / sampleRate, cs = Math.cos(w0), al = Math.sin(w0) / (2 * q), a0 = 1 + al;
+      return [(1 - cs) / 2 / a0, (1 - cs) / a0, (1 - cs) / 2 / a0, -2 * cs / a0, (1 - al) / a0];
+    }
+    // passa-altas RBJ em fc (Hz) com Q
+    static bh(fc, q) {
+      const w0 = 2 * Math.PI * fc / sampleRate, cs = Math.cos(w0), al = Math.sin(w0) / (2 * q), a0 = 1 + al;
+      return [(1 + cs) / 2 / a0, -(1 + cs) / a0, (1 + cs) / 2 / a0, -2 * cs / a0, (1 - al) / a0];
+    }
+    static run(c, z, o, x) {
+      let y = c[0] * x + c[1] * z[o] + c[2] * z[o + 1] - c[3] * z[o + 2] - c[4] * z[o + 3];
+      if (y > -1e-20 && y < 1e-20) y = 0;
+      z[o + 1] = z[o]; z[o] = x; z[o + 3] = z[o + 2]; z[o + 2] = y;
+      return y;
+    }
     process(inputs, outputs, P) {
       const inp = inputs[0] || [], out = outputs[0], n = out[0].length;
       const steps = Math.pow(2, P.bits[0] - 1), down = P.down[0];
+      if (P.mode && P.mode[0] >= 0.5) {
+        // antes da tomada, um passa-baixa de 4 polos (Butterworth) em 0,45 x a taxa nova: o agudo que nao cabe na taxa
+        // nao "dobra" para baixo (era o chiado: um chimbal ganhava +30 a +40 dB abaixo de 3 kHz). Depois, 2 polos em
+        // 0,9 x a taxa nova: fica o primeiro espelho (o metalico do Lo-Fi), sai o "fizz" das imagens de cima
+        if (down !== this.zd) {
+          this.zd = down; const fs = sampleRate / Math.max(1, down);
+          // Onda 1.6: o anti-espelho passou a 8 polos (Butterworth) em 0,42 x a taxa nova (eram 4 polos em 0,45): com a
+          // faixa do radio em volta, um seno de 5 kHz no padrao (~8,2 kHz) dobra a -32 dB (era -14 dB)
+          this.zq = [D4Crush.bq(0.42 * fs, 0.5098), D4Crush.bq(0.42 * fs, 0.6013), D4Crush.bq(0.9 * fs, Math.SQRT1_2),
+            D4Crush.bq(0.42 * fs, 0.9000), D4Crush.bq(0.42 * fs, 2.5629)];
+        }
+        const q = this.zq, R = D4Crush.run, rq = this.rq;
+        const ea = 1 - Math.exp(-1 / (0.005 * sampleRate)), er = 1 - Math.exp(-1 / (0.05 * sampleRate));   // envelope do grao: 5 ms sobe, 50 ms desce
+        // t = quanto falta (em amostras) para a proxima tomada, contado a partir da amostra anterior
+        for (let k = 0; k < n; k++) {
+          this.t -= 1;
+          const take = this.t <= 0, u = take ? -this.t : 0;   // a tomada foi u amostras antes desta (0 <= u < 1)
+          if (take) this.t += Math.max(1, down);
+          for (let c = 0; c < out.length; c++) {
+            let x = (inp[c] || inp[0] || [])[k] || 0;
+            if (!(x > -4 && x < 4)) x = 0;
+            const j = c & 1, old = this.h[j], z = this.zs[j];
+            // radio: grao que segue o sinal, faixa 300 Hz-3 kHz, saturacao leve (ganho 1,8 no sinal baixo, ~+5 dB no meio da faixa: repoe o nivel que o grave cortado tira; pico teorico 1,125)
+            const ax = x < 0 ? -x : x; this.env[j] += (ax - this.env[j]) * (ax > this.env[j] ? ea : er);
+            this.rs = (this.rs * 1664525 + 1013904223) >>> 0;
+            x += this.env[j] * 0.02 * (this.rs / 2147483648 - 1);
+            x = R(rq[1], z, 16, R(rq[0], z, 12, x));
+            x = 1.8 * Math.tanh(1.6 * x) / 1.6;
+            x = R(q[4], z, 24, R(q[3], z, 20, R(q[1], z, 4, R(q[0], z, 0, x))));
+            let y = old;
+            if (take) {
+              const v = x + (this.xp[j] - x) * u;
+              this.h[j] = Math.round(v * steps) / steps;
+              y = old * (1 - u) + this.h[j] * u;
+            }
+            out[c][k] = R(q[2], z, 8, y);
+            this.xp[j] = x;
+          }
+        }
+        return true;
+      }
       for (let k = 0; k < n; k++) {
         this.c += 1;
         const take = this.c >= down;
@@ -181,25 +256,59 @@ window.RJ = window.RJ || {};
   }
   registerProcessor("d4-crush", D4Crush);
 
-  /* PITCH (face nova): pitch shifter de duas leituras num anel (granular por linha de atraso).
-     Cada leitura anda a "r" amostras por amostra (r = 2^(semi/12)), entao o tom sai exato; as duas
-     leituras estao meio ciclo defasadas e cruzam com janelas sin^2 (somam 1: o nivel nao muda).
-     Janela de 50 ms. fb volta a saida afinada para a entrada (cada repeticao sobe/desce de novo),
-     com um tanh no retorno para nao estourar; bal mistura direto (0) e efeito (1).
-     Em 0 semitom a leitura vira o proprio sinal (sem atraso nem pente). */
+  /* PITCH (face nova): pitch shifter de linha de atraso com emenda sincronizada (codigo proprio;
+     a ideia e a do "harmonizer" de duas leituras, como no PitchShift do Tone.js, mais a busca de
+     emenda do SOLA).
+     - Uma leitura anda "r" amostras por amostra no anel (r = 2^(semi/12)): o tom sai exato.
+     - O atraso dela encolhe (r > 1) ou cresce (r < 1). Antes de sair da faixa, nasce uma leitura nova
+       do outro lado. O ponto dela e escolhido por correlacao com o que a velha acabou de tocar (8 ms para
+       tras), com ajuste entre amostras: a emenda cai em fase e o tom puro nao "bate" nem desafina.
+     - Atraso: a faixa comeca em ~1,5 ms e a busca curta vai a 15 ms; quando ela nao acha a fase (um grave
+       de periodo longo) a busca vai a 30 ms e a faixa cresce, enquanto o grave durar. Acima de 1 oitava o
+       cruzamento encolhe na mesma proporcao, para o atraso nao crescer com o intervalo.
+     - Onda 1.6 (som com varios instrumentos): cada emenda e um salto de fase para tudo o que nao e o som
+       dominante. Com emendas curtas (salto minimo de 2 ms, cruzamento de 4 ms, busca de 8 ms) eram ~40
+       emendas/s, e a modulacao virava "filtro" aspero (laterais a cada ~40 Hz em volta de cada nota) e um
+       resto nas frequencias originais (-20 a -26 dB); descendo 1 oitava o mix ficava quase so ruido.
+       Agora o salto minimo e 12 ms e o cruzamento 15 ms: menos emendas, mais suaves. Atraso medio ~10-18 ms.
+     - As duas cruzam em 15 ms; a forma do cruzamento vai de soma de amplitude (emenda em fase) a soma
+       de potencia (som sem periodo, como ruido), pelo grau da correlacao.
+     - Subindo, um passa-baixa (Butterworth) em 0,45 x taxa / r antes da leitura tira o espelhamento
+       (descendo ele fica em 0,45 x taxa).
+     - FEEDBACK: a saida afinada volta a entrada depois de "time" segundos (o efeito poe 1/8 de nota
+       no BPM): cada repeticao sobe/desce mais um passo, e em 0 semitom vira eco. tanh no retorno.
+     - BALANCE: direto (0) e efeito (1). Em 0 semitom o efeito e o proprio sinal (sem atraso). */
   class D4Pitch extends AudioWorkletProcessor {
     static get parameterDescriptors() { return [
       { name: "semi", defaultValue: 0, minValue: -24, maxValue: 24, automationRate: "k-rate" },
       { name: "fb", defaultValue: 0, minValue: 0, maxValue: 0.8, automationRate: "k-rate" },
       { name: "bal", defaultValue: 0.5, minValue: 0, maxValue: 1, automationRate: "k-rate" },
+      { name: "time", defaultValue: 0.25, minValue: 0.03, maxValue: 1, automationRate: "k-rate" },
     ]; }
     constructor() {
       super();
-      this.W = Math.round(sampleRate * 0.05);
-      let N = 1; while (N < this.W * 2 + 16) N *= 2;
+      const sr = sampleRate;
+      this.L = Math.round(sr * 0.010);      // trecho comparado na busca (o que as duas leituras acabaram de tocar)
+      this.Ss = Math.round(sr * 0.015);    // busca curta: periodos ate 15 ms (acima de ~67 Hz)
+      this.Sl = Math.round(sr * 0.030);    // busca longa: ate 30 ms (um grave de 33 Hz), so quando a curta nao acha a fase
+      this.X = Math.round(sr * 0.015);      // cruzamento (amostras de saida): 15 ms (Onda 1.6; era 4 ms)
+      this.Lm = Math.round(sr * 0.002);    // vida minima de uma leitura fora do cruzamento
+      this.dLo = Math.round(sr * 0.0015) + 4;         // o menor atraso (~1,5 ms)
+      this.Jm = Math.round(sr * 0.012);    // o menor salto de uma emenda: 12 ms (Onda 1.6; era 2 ms, emendas demais num mix)
+      this.Se = this.Ss;                              // a busca em uso (curta ou longa)
+      this.st = sr > 60000 ? 4 : 2;
+      let N = 1; while (N < this.dLo + 2 * this.Sl + this.L + this.X + this.Lm + 64) N *= 2;
       this.N = N; this.M = N - 1;
+      let F = 1; while (F < sr + 8) F *= 2;     // retorno do feedback: ate 1 s
+      this.F = F; this.FM = F - 1;
       this.buf = [new Float32Array(N), new Float32Array(N)];
-      this.w = 0; this.ph = 0; this.byp = 1; this.fb = 0; this.bal = 0.5;
+      this.fbb = [new Float32Array(F), new Float32Array(F)];
+      this.w = 0;                               // posicao absoluta de escrita
+      this.pa = -this.dLo - this.Ss;            // leitura ativa (posicao absoluta)
+      this.pb = 0; this.xf = -1; this.xl = this.X; this.al = 1; this.T = null;   // leitura nova, progresso do cruzamento (-1 = sem), grau da correlacao
+      this.byp = 1; this.fb = 0; this.bal = 0.5; this.semi = null; this.r = 1;
+      this.z = [[0, 0, 0, 0], [0, 0, 0, 0]];    // estado do passa-baixa (x1, x2, y1, y2) por canal
+      this.lp = null;
     }
     rh(b, p) {                        // leitura Hermite (4 pontos) no anel
       const M = this.M, i = Math.floor(p), f = p - i;
@@ -207,32 +316,127 @@ window.RJ = window.RJ || {};
       const c1 = 0.5 * (y2 - y0), c2 = y0 - 2.5 * y1 + 2 * y2 - 0.5 * y3, c3 = 0.5 * (y3 - y0) + 1.5 * (y1 - y2);
       return ((c3 * f + c2) * f + c1) * f + y1;
     }
+    setSemi(semi) {
+      this.semi = semi; const r = this.r = Math.pow(2, semi / 12), sr = sampleRate;
+      const g = this.g = Math.abs(1 - r), k = Math.max(1, g);
+      // subindo mais de uma oitava a leitura chega g vezes mais rapido no "agora": cruzamento e vida encolhem na mesma
+      // proporcao, e a faixa de atraso fica a mesma de 1 oitava (o atraso nao cresce com o intervalo)
+      this.xr = Math.max(16, Math.round(this.X / k)); const lm = this.Lm / k;
+      this.lm = lm;
+      this.lo = r > 1 ? this.dLo + g * (2 * this.xr + lm) : this.dLo;   // a leitura nova entra (xr), vive (lm) e ainda tem margem para sair (xr)
+      this.span();
+      // passa-baixa Butterworth (RBJ, Q = 0,7071) em 0,45 x sr / r. Roda sempre (descendo fica em 0,45 x sr, quase
+      // transparente): ligar/desligar ou zerar o estado deixaria um degrau no anel, ouvido quando a leitura passa por ele
+      const w0 = 2 * Math.PI * 0.45 * sr / Math.max(1, r) / sr, cs = Math.cos(w0), al = Math.sin(w0) / (2 * Math.SQRT1_2), a0 = 1 + al;
+      this.lp = [(1 - cs) / 2 / a0, (1 - cs) / a0, (1 - cs) / 2 / a0, -2 * cs / a0, (1 - al) / a0];
+    }
+    // o maior atraso da faixa, com a busca em uso: subindo, a leitura nova nasce entre lo e dHi; descendo, a velha vai ate dHi
+    span() { this.dHi = this.r > 1 ? this.lo + this.Se : this.dLo + this.Se + this.g * (2 * this.xr + this.lm); }
+    // escolhe a posicao da leitura nova: atraso alvo em [lo, lo + busca]. Compara o que as duas acabaram de tocar
+    // (L amostras para tras: nao precisa esperar o futuro, e o atraso minimo nao depende de L). Primeiro a busca curta;
+    // se ela nao achar a fase (grave de periodo longo) e a longa achar bem melhor, usa a longa e a faixa cresce
+    splice(lo) {
+      const B0 = this.buf[0], B1 = this.buf[1], M = this.M, L = this.L, Ss = this.Ss, Sl = this.Sl;
+      const base = Math.floor(this.pa), fr = this.pa - base;
+      const j0 = Math.round(this.w - lo) - base;   // deslocamento (em amostras) da leitura nova contra a velha, no atraso "lo"
+      let ea = 0;
+      const st = this.st;   // passo da comparacao e da busca (4 acima de 60 kHz: o mesmo custo de 48 kHz)
+      for (let m = 0; m < L; m += st) { const a = B0[(base - m) & M] + B1[(base - m) & M]; ea += a * a; }
+      const score = j => {
+        let c = 0, eb = 0;
+        for (let m = 0; m < L; m += st) {
+          const a = B0[(base - m) & M] + B1[(base - m) & M], b = B0[(base + j - m) & M] + B1[(base + j - m) & M];
+          c += a * b; eb += b * b;
+        }
+        return c / Math.sqrt(ea * eb + 1e-12);
+      };
+      const find = (j1, j2) => {
+        let best = j2, bs = -2;
+        for (let j = j2; j >= j1; j -= st) { const s = score(j); if (s > bs) { bs = s; best = j; } }
+        for (let h = 1; h < st; h++) for (const j of [best - h, best + h]) { if (j <= j2 && j >= j1) { const s = score(j); if (s > bs) { bs = s; best = j; } } }
+        return [best, bs];
+      };
+      // o salto (j = atraso velho - atraso novo) tem no minimo Jm: um salto quase nulo "acerta" a fase de qualquer grave,
+      // mas desfaz o que a leitura andou (o tom volta ao original). Subindo, j < 0; descendo, j > 0
+      const Jm = this.Jm, up = this.r > 1, cut = (a, b) => up ? [a, Math.min(b, -Jm)] : [Math.max(a, Jm), b];
+      const r0 = cut(j0 - Ss, j0);
+      if (r0[0] > r0[1]) { this.pa = this.w - lo - Ss; return; }   // a leitura esta longe demais da faixa (nao deve acontecer): volta para ela
+      let [best, bs] = find(...r0), S = Ss;
+      const better = x => x > bs + 0.25 * (1 - bs);   // a longa so ganha se fechar 1/4 do que falta para a fase exata
+      if (ea > 1e-9 && bs < 0.995) {
+        if (up || this.Se === Sl) {
+          const [bl, sl] = find(...cut(j0 - Sl, j0 - Ss - 1));
+          if (better(sl)) { best = bl; bs = sl; S = Sl; }
+        } else {
+          // descendo na busca curta, a leitura velha ainda nao foi longe o bastante para um salto de um periodo longo:
+          // se o som se repete melhor num periodo longo (grave), adia a emenda e deixa a faixa crescer
+          const [, sk] = find(-Sl, -Ss - 1);
+          if (better(sk)) { this.Se = Sl; this.span(); return; }
+        }
+      }
+      if (S !== this.Se) { this.Se = S; this.span(); }
+      // ponto exato entre amostras: parabola nos vizinhos (um erro de meia amostra a cada emenda curta ja desafina ~5 cent)
+      const sm = score(best - 1), s0 = score(best), sp = score(best + 1), den = sm - 2 * s0 + sp;
+      const dj = den < -1e-9 ? Math.max(-0.5, Math.min(0.5, 0.5 * (sm - sp) / den)) : 0;
+      this.pb = base + best + dj + fr;
+      this.al = ea < 1e-9 ? 1 : Math.max(0, Math.min(1, bs));
+      this.xf = 0;
+      this.xl = this.xr;
+    }
     process(inputs, outputs, P) {
-      const inp = inputs[0] || [], out = outputs[0], n = out[0].length, W = this.W, M = this.M;
-      const semi = Math.round(P.semi[0]), r = Math.pow(2, semi / 12), inc = (1 - r) / W;
-      const fbT = P.fb[0], balT = P.bal[0], bypT = semi === 0 ? 1 : 0;
+      const inp = inputs[0] || [], out = outputs[0], n = out[0].length, M = this.M, FM = this.FM, X = this.X;
+      const semi = Math.round(P.semi[0]);
+      if (semi !== this.semi) this.setSemi(semi);
+      const r = this.r, fbT = P.fb[0], balT = P.bal[0], bypT = semi === 0 ? 1 : 0;
+      const T = Math.max(2, Math.min(this.F - 4, P.time[0] * sampleRate));
+      if (this.T == null) this.T = T;
       if (!this.ready) { this.ready = true; this.fb = fbT; this.bal = balT; this.byp = bypT; }
+      const lp = this.lp;
       for (let k = 0; k < n; k++) {
         this.fb += (fbT - this.fb) * 0.002; this.bal += (balT - this.bal) * 0.002;
         if (Math.abs(fbT - this.fb) < 1e-6) this.fb = fbT;
         if (Math.abs(balT - this.bal) < 1e-6) this.bal = balT;
         if (this.byp !== bypT) this.byp = bypT > this.byp ? Math.min(1, this.byp + 1 / 512) : Math.max(0, this.byp - 1 / 512);
-        let ph = this.ph + inc; ph -= Math.floor(ph); this.ph = ph;
-        let ph2 = ph + 0.5; if (ph2 >= 1) ph2 -= 1;
-        const s = Math.sin(Math.PI * ph), g1 = s * s, g2 = 1 - g1;
-        const p1 = this.w - 3 - ph * W, p2 = this.w - 3 - ph2 * W;
-        // com feedback o retorno soma ao som: o efeito cai um pouco (ate -4,4 dB) para nao passar de 0 dBFS
-        const dry = 1 - this.bal, wg = this.bal * (1 - 0.5 * this.fb), byp = this.byp, fb = this.fb;
+        // cruzamento: soma de amplitude (al = 1) ou de potencia (al = 0)
+        let ga = 1, gb = 0;
+        if (this.xf >= 0) {
+          const u = this.xf / this.xl, ca = 0.5 + 0.5 * Math.cos(Math.PI * u), pa = Math.cos(0.5 * Math.PI * u), pb = Math.sin(0.5 * Math.PI * u);
+          ga = this.al * ca + (1 - this.al) * pa; gb = this.al * (1 - ca) + (1 - this.al) * pb;
+        }
+        if (this.T !== T) this.T = Math.abs(T - this.T) < 0.02 ? T : this.T + (T > this.T ? 0.02 : -0.02);   // muda o tempo do eco devagar (sem clique)
+        const tp = this.w - this.T, ti = Math.floor(tp), tf = tp - ti;
+        const dry = 1 - this.bal, wg = this.bal * (1 - 0.5 * this.fb), byp = this.byp, fb = this.fb, wi = this.w & M, fi = this.w & FM;
         for (let c = 0; c < out.length; c++) {
-          let x = (inp[c] || inp[0] || [])[k] || 0; const b = this.buf[c & 1];
+          let x = (inp[c] || inp[0] || [])[k] || 0;
           if (!(x > -1e4 && x < 1e4)) x = 0;   // NaN/Infinity nao entram no anel (ficariam la para sempre)
-          const sh = g1 * this.rh(b, p1) + g2 * this.rh(b, p2);
-          const wet = byp > 0 ? byp * x + (1 - byp) * sh : sh;
-          const v = x + fb * Math.tanh(sh);
-          b[this.w & M] = v > -1e-20 && v < 1e-20 ? 0 : v;   // sem denormais no silencio
+          const j = c & 1, b = this.buf[j], fq = this.fbb[j];
+          const z0 = fq[ti & FM], zr = z0 + (fq[(ti + 1) & FM] - z0) * tf;   // o retorno, "time" atras
+          let v = x + fb * Math.tanh(zr);
+          { const z = this.z[j]; let y = lp[0] * v + lp[1] * z[0] + lp[2] * z[1] - lp[3] * z[2] - lp[4] * z[3]; if (y > -1e-20 && y < 1e-20) y = 0; z[1] = z[0]; z[0] = v; z[3] = z[2]; z[2] = y; v = y; }
+          b[wi] = v > -1e-20 && v < 1e-20 ? 0 : v;   // sem denormais no silencio
+          let sh = ga * this.rh(b, this.pa);
+          if (gb) sh += gb * this.rh(b, this.pb);
+          const wet = byp > 0 ? byp * (x + fb * Math.tanh(zr)) + (1 - byp) * sh : sh;
+          fq[fi] = wet > -1e-20 && wet < 1e-20 ? 0 : wet;
           out[c][k] = dry * x + wg * wet;
         }
-        this.w = (this.w + 1) & M;
+        // subindo, a leitura velha chega mais perto do "agora" a cada amostra; logo depois de trocar de tom ela pode
+        // nao ter margem para o cruzamento inteiro: ai ela anda mais devagar (some em fade, sem ler o que nao foi escrito)
+        if (this.xf >= 0) {
+          const left = this.xl - this.xf;   // a nova tambem: trocando para cima no meio de um cruzamento, ela pode estar perto do "agora"
+          if (r > 1) { this.pa += Math.min(r, 1 + Math.max(0, this.w - this.pa - 4) / left); this.pb += Math.min(r, 1 + Math.max(0, this.w - this.pb - 4) / left); }
+          else { this.pa += r; this.pb += r; }
+        }
+        else this.pa += r;
+        this.w++;
+        if (this.xf >= 0 && ++this.xf >= this.xl) { this.pa = this.pb; this.xf = -1; }
+        if (this.w - this.pa < 3) this.pa = this.w - 3;                               // nunca le o que ainda nao foi escrito
+        if (this.xf < 0) {
+          const d = this.w - this.pa;
+          if (d < 4 || d > this.N - 8) this.pa = this.w - this.dLo - this.Ss;         // fora do anel (nao deve acontecer)
+          else if (r > 1 && (d - this.g * this.xr <= this.dLo || d > this.lo + this.Sl + this.Ss)) this.splice(this.lo);   // (ou longe demais: veio de outro tom)
+          else if (r < 1 && d + this.g * this.xr >= this.dHi) this.splice(this.lo);
+        }
       }
       return true;
     }
@@ -397,10 +601,13 @@ window.RJ = window.RJ || {};
     };
   }
 
-  /** PITCH (face nova, worklet d4-pitch): Ctrl 1 = semitons (-24 a +24), Ctrl 2 = feedback, Ctrl 3 = balance. */
+  /** PITCH (face nova, worklet d4-pitch): Ctrl 1 = semitons (-24 a +24), Ctrl 2 = feedback, Ctrl 3 = balance.
+   *  O retorno do feedback espera 1/8 de nota no BPM (entre 0,12 e 0,5 s): cada repeticao sobe/desce mais um passo. */
   const pitchSemi = v => Math.round((clamp(v, 0, 1) - 0.5) * 48);
+  const pitchFbTime = bpm => clamp(30 / (bpm || 90), 0.12, 0.5);
+  RJ.d4PitchFbTime = pitchFbTime;
   function pitch(ctx) {
-    const node = workletNode(ctx, "d4-pitch");
+    const node = workletNode(ctx, "d4-pitch", { time: pitchFbTime(90) });
     const P = k => node.parameters.get(k);
     return {
       input: node, output: node,
@@ -409,6 +616,7 @@ window.RJ = window.RJ || {};
         if (i === 1) P("fb").setValueAtTime(v * 0.8, ctx.currentTime);
         if (i === 2) P("bal").setValueAtTime(v, ctx.currentTime);
       },
+      bpm(b) { P("time").setValueAtTime(pitchFbTime(b), ctx.currentTime); },
     };
   }
 
@@ -525,11 +733,16 @@ window.RJ = window.RJ || {};
   }
 
   const lofiBits = v => Math.round(16 - clamp(v, 0, 1) * 13);
-  /** 7. Lo-fi / Bit Crush (worklet): bits, taxa de amostragem e tom. */
+  /** Face nova: o divisor da taxa para o rAt (0-1). Curva que desce mais cedo que a da estavel:
+   *  0 = taxa cheia, 0,35 (o padrao) ~ 8 kHz, 0,5 ~ 5 kHz, 1 = 1 kHz (na taxa de 48 kHz). */
+  const lofiDownNf = v => Math.pow(48, Math.pow(clamp(v, 0, 1), 0.75));
+  RJ.d4LofiDownNf = lofiDownNf;
+  /** 7. Lo-fi / Bit Crush (worklet): bits, taxa de amostragem e tom.
+   *  Face nova (MFX 14): relogio uniforme no worklet (mode 1, sem o chiado do tremor de relogio) e a curva lofiDownNf. */
   function lofi(ctx, env) {
     const nf = !!(env && env.nf);   // face nova: bits inteiros (degraus de 2^bits)
     const input = ctx.createGain(), output = ctx.createGain();
-    const node = workletNode(ctx, "d4-crush");
+    const node = workletNode(ctx, "d4-crush", nf ? { mode: 1 } : null);
     const tone = ctx.createBiquadFilter(); tone.type = "lowpass"; tone.Q.value = 0.5;
     input.connect(node).connect(tone).connect(output);
     const P = k => node.parameters.get(k);
@@ -537,7 +750,7 @@ window.RJ = window.RJ || {};
       input, output,
       set(i, v) {
         if (i === 0) { if (nf) P("bits").setValueAtTime(lofiBits(v), ctx.currentTime); else P("bits").setTargetAtTime(16 - v * 13, ctx.currentTime, 0.01); }
-        if (i === 1) P("down").setTargetAtTime(exp(v, 1, 40), ctx.currentTime, 0.01);
+        if (i === 1) P("down").setTargetAtTime(nf ? lofiDownNf(v) : exp(v, 1, 40), ctx.currentTime, 0.01);
         if (i === 2) glide(tone.frequency, exp(v, 900, 20000), ctx, 0.01);
       },
     };
@@ -606,7 +819,7 @@ window.RJ = window.RJ || {};
   RJ.D4FX = [
     { id: "filter", n: 1, dir: 1, name: "Filter+Drive", caps: ["Cutoff", "Reso", "Drive"], codes: ["CoF", "rES", "drV"], def: [0.75, 0.3, 0.2], make: filterDrive },
     // nfK: na face nova o Ctrl k move o parametro nfK[k] (ordem do manual); show/codes sao por Ctrl da face nova
-    { id: "pitch", n: null, dir: 2, name: "Pitch", caps: ["Pitch", "Feedbk", "Balance"], codes: ["Pit", "Fdb", "bAL"], show: [showSemi, null, null], def: [0.5, 0, 0.5], make: pitch, worklet: true },
+    { id: "pitch", n: null, dir: 2, name: "Pitch", caps: ["Pitch", "Feedbk", "Balance"], codes: ["Pit", "Fdb", "bAL"], show: [showSemi, null, null], def: [0.5, 0, 1], make: pitch, worklet: true },
     // Delay: parametro 0 = nota da estavel (9 notas), 3 = nota da face nova (t32-t1, def t8); 2 = Level na estavel, BALANCE na face nova
     { id: "delay", n: 3, dir: 3, name: "Delay", caps: ["Time", "Feedbk", "Level"], codes: [null, "Fdb", "bAL"], show: [showDelayNf, null, null], nfK: [3, 1, 2], def: [0.5, 0.4, 0.5, 4 / 12], make: delay },
     { id: "isolator", n: 2, dir: 4, name: "Isolator", caps: ["Low", "Mid", "High"], codes: ["Lo", "Mid", "Hi"], def: [0.5, 0.5, 0.5], make: isolator },
