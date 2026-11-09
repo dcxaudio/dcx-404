@@ -554,7 +554,7 @@ window.RJ = window.RJ || {};
       if (fx) return fx;
       const def = RJ.D4FX.byId(id);
       if (!def || !def.make || (def.worklet && !this.worklet)) return null;
-      fx = def.make(this.g.ctx);
+      fx = def.make(this.g.ctx, { nf: this.nf });   // a face nova pode ter outra tabela (Delay t32-t1, balance)
       fx.def = def;
       this.st.params[id].forEach((v, i) => fx.set(i, v));
       if (fx.bpm) fx.bpm(this.st.bpm);
@@ -620,7 +620,7 @@ window.RJ = window.RJ || {};
       st.mfx = RJ.D4FX.fromOld(d.mfx, true);
       const mf = RJ.D4FX.byId(st.mfx);
       if (!mf || !mf.make || !(this.nf ? mf.m : mf.mfx)) st.mfx = "reverb";
-      [1, 2].forEach(b => { const id = RJ.D4FX.fromOld(d.fx && d.fx[b]); st.fx[b] = id && RJ.D4FX.byId(id).make ? id : null; });
+      [1, 2].forEach(b => { const id = RJ.D4FX.fromOld(d.fx && d.fx[b]); const fd = id && RJ.D4FX.byId(id); st.fx[b] = fd && fd.make && (this.nf || fd.n) ? id : null; });   // a estavel nao tem PITCH: um estado da face nova abre la sem ele
       RJ.D4FX.forEach(f => {
         const p = d.params && (d.params[f.id] || (f.n && d.params[f.n]));
         if (Array.isArray(p)) st.params[f.id] = f.def.map((v, i) => (typeof p[i] === "number" ? clamp(p[i], 0, 1) : v));
@@ -1110,8 +1110,9 @@ window.RJ = window.RJ || {};
       if (id && id !== was && this.preset.some(v => v != null)) {
         this.preset.forEach((v, k) => {
           if (v == null) return;
-          this.st.params[id][k] = v;
-          [1, 2].forEach(x => { const fx = this.fxi[x][id]; if (fx) fx.set(k, v); });
+          const i = this.pk(RJ.D4FX.byId(id), k);
+          this.st.params[id][i] = v;
+          [1, 2].forEach(x => { const fx = this.fxi[x][id]; if (fx) fx.set(i, v); });
         });
         this.preset = [null, null, null];
       }
@@ -1186,7 +1187,7 @@ window.RJ = window.RJ || {};
         const d = RJ.D4FX.byId(this.st.mfx), n = this.mfxSel != null ? this.mfxSel : d && d.m ? d.m : 1;
         return (n - 1) / (RJ.D4FX.MFX_MAX - 1);
       }
-      if (this.remainHeld && !this.setup) { const f = this.curFx(); return this.preset[k] != null ? this.preset[k] : f ? this.st.params[f.id][k] : 0.5; }
+      if (this.remainHeld && !this.setup) { const f = this.curFx(); return this.preset[k] != null ? this.preset[k] : f ? this.st.params[f.id][this.pk(f, k)] : 0.5; }
       if (this.lofiPage()) {
         const L = RJ.D4_LOFI;
         return [(this.st.lofiBits - L.minBits) / (L.maxBits - L.minBits), 1 - Math.log(this.st.lofiDown) / Math.log(L.maxDown), 0][k];
@@ -1195,7 +1196,7 @@ window.RJ = window.RJ || {};
       if (this.setup) return [ (this.st.bpm - 40) / 200, this.st.roll / (ROLLS.length - 1), this.st.padLevel[this.st.cur] ][k];
       if (this.sed && (this.sed.mode === "se" || k < 2)) return this.sedGet(k);
       const f = this.curFx();
-      return f ? this.st.params[f.id][k] : 0.5;
+      return f ? this.st.params[f.id][this.pk(f, k)] : 0.5;
     }
 
     ctrlSet(k, v) {
@@ -1226,12 +1227,13 @@ window.RJ = window.RJ || {};
       if (this.sed && (this.sed.mode === "se" || k < 2)) { this.sedSet(k, v); return; }
       const f = this.curFx();
       if (!f) { this.flash("---", "fx"); return; }
-      this.st.params[f.id][k] = v;
-      [1, 2].forEach(b => { const fx = this.fxi[b][f.id]; if (fx) fx.set(k, v); });
+      const pi = this.pk(f, k);
+      this.st.params[f.id][pi] = v;
+      [1, 2].forEach(b => { const fx = this.fxi[b][f.id]; if (fx) fx.set(pi, v); });
       if (!this.nf) { this.flash(String(Math.round(v * 127)), "fx"); return; }
       // face nova: ao comecar a girar, o visor mostra o codigo do manual (CoF, rES, drV...) e depois o valor
       const now = performance.now(), code = f.codes && f.codes[k], fmt = f.show && f.show[k];
-      const val = fmt ? fmt(v) : String(Math.round(v * 127));
+      const val = fmt ? fmt(v, this.st.bpm) : String(Math.round(v * 127));
       const fresh = this.codeK !== k || this.codeFx !== f.id || now - this.codeAt > 1200;
       this.codeAt = now;
       if (code && fresh) { this.codeK = k; this.codeFx = f.id; this.codeUntil = now + 500; this.flash(code, "fx", 1100); }
@@ -1242,9 +1244,12 @@ window.RJ = window.RJ || {};
     ctrlShow(k) {
       const f = this.curFx();
       if (!f) return "---";
-      const v = this.st.params[f.id][k], fmt = f.show && f.show[k];
-      return fmt ? fmt(v) : String(Math.round(v * 127));
+      const v = this.st.params[f.id][this.pk(f, k)], fmt = f.show && f.show[k];
+      return fmt ? fmt(v, this.st.bpm) : String(Math.round(v * 127));
     }
+    /** O parametro guardado que o Ctrl k move. Na face nova alguns efeitos seguem a ordem do manual (nfK):
+     *  Lo-Fi rAt/bit/FLt, Vinyl CMP/noS/FLu, Delay t32-t1; o estado guarda por parametro, entao as duas faces leem o mesmo. */
+    pk(f, k) { return this.nf && f && f.nfK ? f.nfK[k] : k; }
     /** [MFX] segurado ou a janela de 5 s aberta (face nova): o CTRL 3 escolhe o numero. */
     mfxChoosing() {
       if (!this.nf || this.setup || this.remainHeld || this.sed || this.lofiPage()) return false;   // REMAIN (C-3), SAMPLE EDIT e LO-FI vem antes

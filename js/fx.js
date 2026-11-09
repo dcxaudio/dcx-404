@@ -5,6 +5,7 @@
  *   i       0, 1 ou 2 (Ctrl 1-3); v de 0 a 1
  *   active  o efeito entrou ou saiu do bus (o Looper e o Stopper capturam ai)
  *   bpm     o tempo mudou (Delay, Looper)
+ * make(ctx, { nf }) recebe a face (nf = face nova); a estavel e o Studio chamam sem nf e nada muda.
  * O output ja traz o seco quando o efeito e de mistura (Delay, Reverb).
  *
  * DJFX Looper, Stopper/Back Spin, Lo-fi e a gravacao do Resample rodam num
@@ -180,6 +181,64 @@ window.RJ = window.RJ || {};
   }
   registerProcessor("d4-crush", D4Crush);
 
+  /* PITCH (face nova): pitch shifter de duas leituras num anel (granular por linha de atraso).
+     Cada leitura anda a "r" amostras por amostra (r = 2^(semi/12)), entao o tom sai exato; as duas
+     leituras estao meio ciclo defasadas e cruzam com janelas sin^2 (somam 1: o nivel nao muda).
+     Janela de 50 ms. fb volta a saida afinada para a entrada (cada repeticao sobe/desce de novo),
+     com um tanh no retorno para nao estourar; bal mistura direto (0) e efeito (1).
+     Em 0 semitom a leitura vira o proprio sinal (sem atraso nem pente). */
+  class D4Pitch extends AudioWorkletProcessor {
+    static get parameterDescriptors() { return [
+      { name: "semi", defaultValue: 0, minValue: -24, maxValue: 24, automationRate: "k-rate" },
+      { name: "fb", defaultValue: 0, minValue: 0, maxValue: 0.8, automationRate: "k-rate" },
+      { name: "bal", defaultValue: 0.5, minValue: 0, maxValue: 1, automationRate: "k-rate" },
+    ]; }
+    constructor() {
+      super();
+      this.W = Math.round(sampleRate * 0.05);
+      let N = 1; while (N < this.W * 2 + 16) N *= 2;
+      this.N = N; this.M = N - 1;
+      this.buf = [new Float32Array(N), new Float32Array(N)];
+      this.w = 0; this.ph = 0; this.byp = 1; this.fb = 0; this.bal = 0.5;
+    }
+    rh(b, p) {                        // leitura Hermite (4 pontos) no anel
+      const M = this.M, i = Math.floor(p), f = p - i;
+      const y0 = b[(i - 1) & M], y1 = b[i & M], y2 = b[(i + 1) & M], y3 = b[(i + 2) & M];
+      const c1 = 0.5 * (y2 - y0), c2 = y0 - 2.5 * y1 + 2 * y2 - 0.5 * y3, c3 = 0.5 * (y3 - y0) + 1.5 * (y1 - y2);
+      return ((c3 * f + c2) * f + c1) * f + y1;
+    }
+    process(inputs, outputs, P) {
+      const inp = inputs[0] || [], out = outputs[0], n = out[0].length, W = this.W, M = this.M;
+      const semi = Math.round(P.semi[0]), r = Math.pow(2, semi / 12), inc = (1 - r) / W;
+      const fbT = P.fb[0], balT = P.bal[0], bypT = semi === 0 ? 1 : 0;
+      if (!this.ready) { this.ready = true; this.fb = fbT; this.bal = balT; this.byp = bypT; }
+      for (let k = 0; k < n; k++) {
+        this.fb += (fbT - this.fb) * 0.002; this.bal += (balT - this.bal) * 0.002;
+        if (Math.abs(fbT - this.fb) < 1e-6) this.fb = fbT;
+        if (Math.abs(balT - this.bal) < 1e-6) this.bal = balT;
+        if (this.byp !== bypT) this.byp = bypT > this.byp ? Math.min(1, this.byp + 1 / 512) : Math.max(0, this.byp - 1 / 512);
+        let ph = this.ph + inc; ph -= Math.floor(ph); this.ph = ph;
+        let ph2 = ph + 0.5; if (ph2 >= 1) ph2 -= 1;
+        const s = Math.sin(Math.PI * ph), g1 = s * s, g2 = 1 - g1;
+        const p1 = this.w - 3 - ph * W, p2 = this.w - 3 - ph2 * W;
+        // com feedback o retorno soma ao som: o efeito cai um pouco (ate -4,4 dB) para nao passar de 0 dBFS
+        const dry = 1 - this.bal, wg = this.bal * (1 - 0.5 * this.fb), byp = this.byp, fb = this.fb;
+        for (let c = 0; c < out.length; c++) {
+          let x = (inp[c] || inp[0] || [])[k] || 0; const b = this.buf[c & 1];
+          if (!(x > -1e4 && x < 1e4)) x = 0;   // NaN/Infinity nao entram no anel (ficariam la para sempre)
+          const sh = g1 * this.rh(b, p1) + g2 * this.rh(b, p2);
+          const wet = byp > 0 ? byp * x + (1 - byp) * sh : sh;
+          const v = x + fb * Math.tanh(sh);
+          b[this.w & M] = v > -1e-20 && v < 1e-20 ? 0 : v;   // sem denormais no silencio
+          out[c][k] = dry * x + wg * wet;
+        }
+        this.w = (this.w + 1) & M;
+      }
+      return true;
+    }
+  }
+  registerProcessor("d4-pitch", D4Pitch);
+
   /* Gravador do Resample: manda blocos de ~0,1 s pela porta enquanto grava. */
   class D4Rec extends AudioWorkletProcessor {
     constructor() {
@@ -277,8 +336,23 @@ window.RJ = window.RJ || {};
     return { input, output, set(i, v) { glide(gs[i].gain, gain(v), ctx, 0.008); } };
   }
 
-  /** 3. Delay: tempo em notas (no BPM), feedback e nivel do eco. Eco de fita: o retorno perde agudo. */
-  function delay(ctx) {
+  // face nova: a tabela do manual (p. 22), em tempos (1 = uma seminima), e a trava de ~2000 ms
+  const DELAY_NF = [1 / 8, 1 / 4, 1 / 3, 3 / 8, 1 / 2, 2 / 3, 3 / 4, 1, 4 / 3, 3 / 2, 2, 3, 4];
+  const DELAY_NF_SHOW = ["t32", "t16", "t8t", "t16.", "t8", "t4t", "t8.", "t4", "t2t", "t4.", "t2", "t2.", "t1"];
+  const DELAY_MAX = 2;   // s
+  /** O indice da nota da face nova para v (0-1) no BPM: a maior que cabe nos ~2000 ms. */
+  const delayNfIdx = (v, bpm) => {
+    let i = Math.round(clamp(v, 0, 1) * (DELAY_NF.length - 1));
+    while (i > 0 && DELAY_NF[i] * 60 / (bpm || 90) > DELAY_MAX + 1e-9) i--;
+    return i;
+  };
+  RJ.d4DelayNf = { notes: DELAY_NF, show: DELAY_NF_SHOW, max: DELAY_MAX, idx: delayNfIdx };
+
+  /** 3. Delay: tempo em notas (no BPM), feedback e nivel do eco. Eco de fita: o retorno perde agudo.
+   *  Face nova (env.nf): o tempo vem do parametro 3 com a tabela t32-t1 do manual e trava em ~2000 ms;
+   *  o Ctrl 3 e o BALANCE (esquerda so o direto, centro os dois cheios, direita so o eco). */
+  function delay(ctx, env) {
+    if (env && env.nf) return delayNf(ctx);
     const input = ctx.createGain(), output = ctx.createGain();
     const d = ctx.createDelay(4), fb = ctx.createGain(), tone = ctx.createBiquadFilter(), wet = ctx.createGain();
     tone.type = "lowpass"; tone.frequency.value = 5000;
@@ -295,6 +369,46 @@ window.RJ = window.RJ || {};
         if (i === 2) glide(wet.gain, v, ctx);
       },
       bpm(b) { bpm = b; time(); },
+    };
+  }
+  function delayNf(ctx) {
+    const input = ctx.createGain(), output = ctx.createGain();
+    const d = ctx.createDelay(4), fb = ctx.createGain(), tone = ctx.createBiquadFilter(), wet = ctx.createGain(), dry = ctx.createGain();
+    // Q em dB: -3,01 = Butterworth, sem o pico de +1 dB do padrao (com feedback 0,9 o pico fazia o laco passar de 1 perto de 5 kHz)
+    tone.type = "lowpass"; tone.frequency.value = 5000; tone.Q.value = -3.01;
+    input.connect(dry).connect(output);
+    input.connect(d); d.connect(tone).connect(fb).connect(d);
+    d.connect(wet).connect(output);
+    let v3 = 4 / 12, bpm = 90;
+    const born = ctx.currentTime;
+    // ao montar (mesmo instante do relogio) o tempo entra direto, sem rampa; depois desliza em ~0,15 s como fita
+    const time = () => {
+      const T = DELAY_NF[delayNfIdx(v3, bpm)] * 60 / bpm;
+      if (ctx.currentTime === born) { hold(d.delayTime, born); d.delayTime.setValueAtTime(T, born); } else glide(d.delayTime, T, ctx, 0.05);
+    };
+    return {
+      input, output,
+      set(i, v) {
+        if (i === 3) { v3 = v; time(); }
+        if (i === 1) glide(fb.gain, v * 0.9, ctx);
+        if (i === 2) { glide(dry.gain, Math.min(1, 2 * (1 - v)), ctx); glide(wet.gain, Math.min(1, 2 * v), ctx); }
+      },
+      bpm(b) { bpm = b; time(); },
+    };
+  }
+
+  /** PITCH (face nova, worklet d4-pitch): Ctrl 1 = semitons (-24 a +24), Ctrl 2 = feedback, Ctrl 3 = balance. */
+  const pitchSemi = v => Math.round((clamp(v, 0, 1) - 0.5) * 48);
+  function pitch(ctx) {
+    const node = workletNode(ctx, "d4-pitch");
+    const P = k => node.parameters.get(k);
+    return {
+      input: node, output: node,
+      set(i, v) {
+        if (i === 0) P("semi").setValueAtTime(pitchSemi(v), ctx.currentTime);
+        if (i === 1) P("fb").setValueAtTime(v * 0.8, ctx.currentTime);
+        if (i === 2) P("bal").setValueAtTime(v, ctx.currentTime);
+      },
     };
   }
 
@@ -315,8 +429,10 @@ window.RJ = window.RJ || {};
     return b;
   }
 
-  /** 4. Vinyl Sim: faixa mais estreita, ruido de disco e wow/flutter, com um compressor leve. */
-  function vinyl(ctx) {
+  /** 4. Vinyl Sim: faixa mais estreita, ruido de disco e wow/flutter, com um compressor leve.
+   *  Parametros: 0 faixa, 1 ruido, 2 wow, 3 compressor (a estavel nao tem Ctrl para o 3: fica no 0,5 de sempre). */
+  function vinyl(ctx, env) {
+    const nf = !!(env && env.nf);
     const input = ctx.createGain(), output = ctx.createGain();
     const comp = ctx.createDynamicsCompressor();
     comp.threshold.value = -18; comp.ratio.value = 3; comp.attack.value = 0.01; comp.release.value = 0.2;
@@ -337,6 +453,8 @@ window.RJ = window.RJ || {};
         if (i === 0) { glide(lp.frequency, exp(v, 18000, 2200), ctx, 0.01); glide(hp.frequency, exp(v, 20, 320), ctx, 0.01); }
         if (i === 1) glide(ng.gain, v * v * 0.9, ctx);
         if (i === 2) { glide(d1.gain, v * 0.004, ctx); glide(d2.gain, v * 0.0005, ctx); }
+        // 3: o COMPRESSOR (Ctrl 1 da face nova). 0,5 = o de sempre (-18 dB, 3:1); 0 = sem compressao
+        if (i === 3 && nf) { glide(comp.threshold, -36 * v, ctx); glide(comp.ratio, 1 + 4 * v, ctx); }   // a estavel fica no de sempre
       },
       dispose() { try { o1.stop(); o2.stop(); ns.stop(); } catch (e) { /* ja parado */ } },
     };
@@ -406,8 +524,10 @@ window.RJ = window.RJ || {};
     };
   }
 
+  const lofiBits = v => Math.round(16 - clamp(v, 0, 1) * 13);
   /** 7. Lo-fi / Bit Crush (worklet): bits, taxa de amostragem e tom. */
-  function lofi(ctx) {
+  function lofi(ctx, env) {
+    const nf = !!(env && env.nf);   // face nova: bits inteiros (degraus de 2^bits)
     const input = ctx.createGain(), output = ctx.createGain();
     const node = workletNode(ctx, "d4-crush");
     const tone = ctx.createBiquadFilter(); tone.type = "lowpass"; tone.Q.value = 0.5;
@@ -416,7 +536,7 @@ window.RJ = window.RJ || {};
     return {
       input, output,
       set(i, v) {
-        if (i === 0) P("bits").setTargetAtTime(16 - v * 13, ctx.currentTime, 0.01);
+        if (i === 0) { if (nf) P("bits").setValueAtTime(lofiBits(v), ctx.currentTime); else P("bits").setTargetAtTime(16 - v * 13, ctx.currentTime, 0.01); }
         if (i === 1) P("down").setTargetAtTime(exp(v, 1, 40), ctx.currentTime, 0.01);
         if (i === 2) glide(tone.frequency, exp(v, 900, 20000), ctx, 0.01);
       },
@@ -469,8 +589,8 @@ window.RJ = window.RJ || {};
   }
 
   // visor da face nova: o valor do Ctrl como o manual mostra (p. 20-22); null = 0-127
-  const DELAY_SHOW = ["t32", "16t", "t16", "t8t", "t8", "t8.", "t4", "t4.", "t2"];   // as notas de DELAY_NOTES ("16t" nao e do manual)
-  const showPick = list => v => list[Math.round(clamp(v, 0, 1) * (list.length - 1))];
+  const showDelayNf = (v, bpm) => DELAY_NF_SHOW[delayNfIdx(v, bpm)];
+  const showSemi = v => String(pitchSemi(v));
   const showSpeed = v => { const s = v * 2 - 1; return (Math.abs(s) < 0.05 ? 0 : s).toFixed(1); };   // -1.0 a 1.0
   const showSw = v => (v >= 0.5 ? "on" : "oFF");
 
@@ -479,18 +599,23 @@ window.RJ = window.RJ || {};
    * def: os valores de inicio; mfx: entra pelo MFX da estavel (pad 1-4); worklet: precisa do worklet.
    * Face nova (ordem do manual, p. 20-22): dir = botao direto 1-5 (visor "F.1".."F.5"); m = MFX 1-24 (visor "1".."24");
    * m 25 = extra fora do manual (Stopper, visor "StP"); codes = o codigo do Ctrl no visor (manual; null = so o valor);
-   * show = como o valor aparece (null = 0-127); soon = so o lugar na lista (o som ainda nao existe: nao liga).
+   * show = como o valor aparece (null = 0-127; recebe (v, bpm)); soon = so o lugar na lista (o som ainda nao existe: nao liga);
+   * nfK = na face nova, o parametro que cada Ctrl move (o estado guarda por parametro: as duas faces leem o mesmo).
+   * make(ctx, env): env.nf = face nova (Delay com a tabela do manual; Lo-fi com bits inteiros).
    */
   RJ.D4FX = [
     { id: "filter", n: 1, dir: 1, name: "Filter+Drive", caps: ["Cutoff", "Reso", "Drive"], codes: ["CoF", "rES", "drV"], def: [0.75, 0.3, 0.2], make: filterDrive },
-    { id: "pitch", n: null, dir: 2, name: "Pitch", caps: ["Pitch", "Feedbk", "Balance"], codes: ["Pit", "Fdb", "bAL"], def: [0.5, 0, 0.5], make: null, soon: true },
-    { id: "delay", n: 3, dir: 3, name: "Delay", caps: ["Time", "Feedbk", "Level"], codes: [null, "Fdb", "bAL"], show: [showPick(DELAY_SHOW), null, null], def: [0.5, 0.4, 0.5], make: delay },
+    // nfK: na face nova o Ctrl k move o parametro nfK[k] (ordem do manual); show/codes sao por Ctrl da face nova
+    { id: "pitch", n: null, dir: 2, name: "Pitch", caps: ["Pitch", "Feedbk", "Balance"], codes: ["Pit", "Fdb", "bAL"], show: [showSemi, null, null], def: [0.5, 0, 0.5], make: pitch, worklet: true },
+    // Delay: parametro 0 = nota da estavel (9 notas), 3 = nota da face nova (t32-t1, def t8); 2 = Level na estavel, BALANCE na face nova
+    { id: "delay", n: 3, dir: 3, name: "Delay", caps: ["Time", "Feedbk", "Level"], codes: [null, "Fdb", "bAL"], show: [showDelayNf, null, null], nfK: [3, 1, 2], def: [0.5, 0.4, 0.5, 4 / 12], make: delay },
     { id: "isolator", n: 2, dir: 4, name: "Isolator", caps: ["Low", "Mid", "High"], codes: ["Lo", "Mid", "Hi"], def: [0.5, 0.5, 0.5], make: isolator },
-    { id: "vinyl", n: 4, dir: 5, name: "Vinyl Sim", caps: ["Freq", "Noise", "Wow"], codes: ["CMP", "noS", "FLu"], def: [0.45, 0.35, 0.3], make: vinyl },
+    // Vinyl: na face nova o Ctrl 1 e o COMPRESSOR (parametro 3); a faixa (0) fica no valor guardado
+    { id: "vinyl", n: 4, dir: 5, name: "Vinyl Sim", caps: ["Freq", "Noise", "Wow"], codes: ["CMP", "noS", "FLu"], nfK: [3, 1, 2], def: [0.45, 0.35, 0.3, 0.5], make: vinyl },
     { id: "reverb", n: 6, m: 1, name: "Reverb", caps: ["Time", "Tone", "Level"], codes: ["tiM", "ton", "bAL"], def: [0.5, 0.6, 0.45], make: reverb, mfx: 1 },
     { id: "comp", n: 8, m: 12, name: "Compressor", caps: ["Sustain", "Attack", "Level"], codes: ["SuS", "Att", "LEV"], def: [0.5, 0.3, 0.4], make: compressor, mfx: 3 },
-    // Lo-fi: os Ctrl do DCX sao Bits, Rate, Tone (o manual poe SAMPLE RATE no 1 e BIT no 2): o codigo segue o que o knob faz
-    { id: "lofi", n: 7, m: 14, name: "Lo-fi", caps: ["Bits", "Rate", "Tone"], codes: ["bit", "rAt", "FLt"], def: [0.55, 0.35, 0.6], make: lofi, mfx: 2, worklet: true },
+    // Lo-fi: os parametros sao Bits, Rate, Tone (a estavel); na face nova o Ctrl 1 e SAMPLE RATE e o 2 e BIT, como no manual
+    { id: "lofi", n: 7, m: 14, name: "Lo-fi", caps: ["Bits", "Rate", "Tone"], codes: ["rAt", "bit", "FLt"], show: [null, v => String(lofiBits(v)), null], nfK: [1, 0, 2], def: [0.55, 0.35, 0.6], make: lofi, mfx: 2, worklet: true },
     { id: "djfx", n: 5, m: 24, name: "DJFX Looper", caps: ["Length", "Speed", "Loop"], codes: ["LEn", null, null], show: [null, showSpeed, showSw], def: [0.5, 1, 1], make: djfx, worklet: true },
     { id: "stopper", n: 9, m: 25, name: "Stopper", caps: ["Time", "Type", "Trig"], codes: [null, null, null], def: [0.4, 0, 1], make: stopper, mfx: 4, worklet: true },
   ];
