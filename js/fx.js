@@ -468,23 +468,50 @@ window.RJ = window.RJ || {};
     };
   }
 
+  // visor da face nova: o valor do Ctrl como o manual mostra (p. 20-22); null = 0-127
+  const DELAY_SHOW = ["t32", "16t", "t16", "t8t", "t8", "t8.", "t4", "t4.", "t2"];   // as notas de DELAY_NOTES ("16t" nao e do manual)
+  const showPick = list => v => list[Math.round(clamp(v, 0, 1) * (list.length - 1))];
+  const showSpeed = v => { const s = v * 2 - 1; return (Math.abs(s) < 0.05 ? 0 : s).toFixed(1); };   // -1.0 a 1.0
+  const showSw = v => (v >= 0.5 ? "on" : "oFF");
+
   /**
-   * A lista. n: o numero no display (F.01 a F.09); caps: as legendas de Ctrl 1-3;
-   * def: os valores de inicio; mfx: entra pelo MFX (pad 1-4); worklet: precisa do worklet.
+   * A lista. n: o numero no display da pagina estavel (F.01 a F.09); caps: as legendas de Ctrl 1-3;
+   * def: os valores de inicio; mfx: entra pelo MFX da estavel (pad 1-4); worklet: precisa do worklet.
+   * Face nova (ordem do manual, p. 20-22): dir = botao direto 1-5 (visor "F.1".."F.5"); m = MFX 1-24 (visor "1".."24");
+   * m 25 = extra fora do manual (Stopper, visor "StP"); codes = o codigo do Ctrl no visor (manual; null = so o valor);
+   * show = como o valor aparece (null = 0-127); soon = so o lugar na lista (o som ainda nao existe: nao liga).
    */
   RJ.D4FX = [
-    { id: "filter", n: 1, name: "Filter+Drive", caps: ["Cutoff", "Reso", "Drive"], def: [0.75, 0.3, 0.2], make: filterDrive },
-    { id: "isolator", n: 2, name: "Isolator", caps: ["Low", "Mid", "High"], def: [0.5, 0.5, 0.5], make: isolator },
-    { id: "delay", n: 3, name: "Delay", caps: ["Time", "Feedbk", "Level"], def: [0.5, 0.4, 0.5], make: delay },
-    { id: "vinyl", n: 4, name: "Vinyl Sim", caps: ["Freq", "Noise", "Wow"], def: [0.45, 0.35, 0.3], make: vinyl },
-    { id: "djfx", n: 5, name: "DJFX Looper", caps: ["Length", "Speed", "Loop"], def: [0.5, 1, 1], make: djfx, worklet: true },
-    { id: "reverb", n: 6, name: "Reverb", caps: ["Time", "Tone", "Level"], def: [0.5, 0.6, 0.45], make: reverb, mfx: 1 },
-    { id: "lofi", n: 7, name: "Lo-fi", caps: ["Bits", "Rate", "Tone"], def: [0.55, 0.35, 0.6], make: lofi, mfx: 2, worklet: true },
-    { id: "comp", n: 8, name: "Compressor", caps: ["Sustain", "Attack", "Level"], def: [0.5, 0.3, 0.4], make: compressor, mfx: 3 },
-    { id: "stopper", n: 9, name: "Stopper", caps: ["Time", "Type", "Trig"], def: [0.4, 0, 1], make: stopper, mfx: 4, worklet: true },
+    { id: "filter", n: 1, dir: 1, name: "Filter+Drive", caps: ["Cutoff", "Reso", "Drive"], codes: ["CoF", "rES", "drV"], def: [0.75, 0.3, 0.2], make: filterDrive },
+    { id: "pitch", n: null, dir: 2, name: "Pitch", caps: ["Pitch", "Feedbk", "Balance"], codes: ["Pit", "Fdb", "bAL"], def: [0.5, 0, 0.5], make: null, soon: true },
+    { id: "delay", n: 3, dir: 3, name: "Delay", caps: ["Time", "Feedbk", "Level"], codes: [null, "Fdb", "bAL"], show: [showPick(DELAY_SHOW), null, null], def: [0.5, 0.4, 0.5], make: delay },
+    { id: "isolator", n: 2, dir: 4, name: "Isolator", caps: ["Low", "Mid", "High"], codes: ["Lo", "Mid", "Hi"], def: [0.5, 0.5, 0.5], make: isolator },
+    { id: "vinyl", n: 4, dir: 5, name: "Vinyl Sim", caps: ["Freq", "Noise", "Wow"], codes: ["CMP", "noS", "FLu"], def: [0.45, 0.35, 0.3], make: vinyl },
+    { id: "reverb", n: 6, m: 1, name: "Reverb", caps: ["Time", "Tone", "Level"], codes: ["tiM", "ton", "bAL"], def: [0.5, 0.6, 0.45], make: reverb, mfx: 1 },
+    { id: "comp", n: 8, m: 12, name: "Compressor", caps: ["Sustain", "Attack", "Level"], codes: ["SuS", "Att", "LEV"], def: [0.5, 0.3, 0.4], make: compressor, mfx: 3 },
+    // Lo-fi: os Ctrl do DCX sao Bits, Rate, Tone (o manual poe SAMPLE RATE no 1 e BIT no 2): o codigo segue o que o knob faz
+    { id: "lofi", n: 7, m: 14, name: "Lo-fi", caps: ["Bits", "Rate", "Tone"], codes: ["bit", "rAt", "FLt"], def: [0.55, 0.35, 0.6], make: lofi, mfx: 2, worklet: true },
+    { id: "djfx", n: 5, m: 24, name: "DJFX Looper", caps: ["Length", "Speed", "Loop"], codes: ["LEn", null, null], show: [null, showSpeed, showSw], def: [0.5, 1, 1], make: djfx, worklet: true },
+    { id: "stopper", n: 9, m: 25, name: "Stopper", caps: ["Time", "Type", "Trig"], codes: [null, null, null], def: [0.4, 0, 1], make: stopper, mfx: 4, worklet: true },
   ];
   RJ.D4FX.byId = id => RJ.D4FX.find(f => f.id === id) || null;
-  RJ.D4FX.mfx = k => RJ.D4FX.find(f => f.mfx === k) || null;
+  RJ.D4FX.mfx = k => RJ.D4FX.find(f => f.mfx === k) || null;   // estavel: MFX pad 1-4
+  RJ.D4FX.byM = k => RJ.D4FX.find(f => f.m === k) || null;     // face nova: MFX 1-24 (+ 25 extra)
+  RJ.D4FX.MFX_MAX = 25;                                         // o CTRL 3 com [MFX] vai de 1 a 24 e o extra (Stopper)
+  // os 24 MFX do manual (p. 20-22), na ordem do painel: o nome de cada numero (os que ainda nao existem nao ligam)
+  RJ.D4FX.MFX_NAMES = ["Reverb", "Tape Echo", "Chorus", "Flanger", "Phaser", "Tremolo/Pan", "Distortion", "Overdrive", "Fuzz", "Wah",
+    "Octave", "Comp", "Equalizer", "Lo-Fi", "Noise Gen", "Radio Tuning", "Slicer", "Ring Mod", "Chromatic PS", "Voice Trans",
+    "C.Canceler", "Subsonic", "BPM Looper", "DJFX Looper"];
+  /** Os numeros antigos -> o efeito: F.01-F.09 da estavel e o MFX pad 1-4 (o estado guarda o id; isto le um numero solto). */
+  RJ.D4FX.OLD_N = { 1: "filter", 2: "isolator", 3: "delay", 4: "vinyl", 5: "djfx", 6: "reverb", 7: "lofi", 8: "comp", 9: "stopper" };
+  RJ.D4FX.OLD_MFX = { 1: "reverb", 2: "lofi", 3: "comp", 4: "stopper" };
+  /** id, numero antigo (5 ou "F.05") ou nada -> id valido ou null. mfx = true le o numero como o MFX pad 1-4 antigo. */
+  RJ.D4FX.fromOld = (x, mfx = false) => {
+    if (typeof x === "string" && RJ.D4FX.byId(x)) return x;
+    const m = typeof x === "number" ? x : typeof x === "string" ? /^\s*(?:F\.?)?0*(\d+)\s*$/i.exec(x) : null;
+    const k = typeof m === "number" ? m : m ? +m[1] : NaN;
+    return (mfx ? RJ.D4FX.OLD_MFX : RJ.D4FX.OLD_N)[k] || null;
+  };
 
   /* ================================================================ o lugar do efeito no bus */
   RJ.D4Slot = class {

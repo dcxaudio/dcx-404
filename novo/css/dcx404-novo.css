@@ -67,6 +67,8 @@
 
 .dx-list { margin: 0; padding: 0; list-style: none; width: 123.882px; height: 226px; font: 600 8px/normal "DX Inter", sans-serif; color: #000; white-space: nowrap; pointer-events: none; }
 .dx-list li { position: absolute; }
+/* Fase 3a: o numero do MFX no visor (escolhendo ou ligado) fica marcado na lista impressa */
+.dx-list li.on { color: var(--dx-borda-on); font-weight: 800; }
 
 .dx-rect5 { width: 58px; height: 17px; border-radius: 5px; background: var(--dx-navy); }
 .dx-rect6 { width: 30px; height: 43px; background: var(--dx-aloj); }

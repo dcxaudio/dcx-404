@@ -83,7 +83,8 @@ window.RJ = window.RJ || {};
     "B": "cdefg", "D": "bcdeg",   // bancos B e D (7 segmentos: como b e d)
     "A": "abcefg", "C": "adef", "L": "def", "U": "bcdef", "u": "cde", "n": "ceg", "o": "cdeg", "i": "e", "t": "defg",
     "H": "bcefg", "h": "cefg", "y": "bcdfg", "S": "afgcd", "c": "deg", "_": "d",
-    "M": "abcef" };   // M (do "EMP"): o arco de 7 segmentos, como nos visores da Boss
+    "M": "abcef",     // M (do "EMP"): o arco de 7 segmentos, como nos visores da Boss
+    "V": "bcdef" };   // V (drV, LEV): em 7 segmentos e o U
   // o digito do visor da face nova (Figma, "Digito de sete segmentos", 39 x 63)
   const DCX_SEG = {
     a: "M8 0H31L34 3L31 6H8L5 3L8 0Z", b: "M35 5L38 8V26L35 29L32 26V8L35 5Z", c: "M33 34L36 37V55L33 58L30 55V37L33 34Z",
@@ -303,6 +304,7 @@ window.RJ = window.RJ || {};
         "fx-delay": ["Delay", () => this.fxDown("delay"), () => this.fxUp("delay")],
         "fx-vinyl": ["Vinyl Sim", () => this.fxDown("vinyl"), () => this.fxUp("vinyl")],
         "fx-djfx": ["DJFX Looper", () => this.fxDown("djfx"), () => this.fxUp("djfx")],
+        "fx-pitch": ["Pitch", () => this.fxDown("pitch"), () => this.fxUp("pitch")],   // face nova (o som e da Onda 1)
         "fx-mfx": ["MFX", () => this.fxDown("mfx"), () => this.fxUp("mfx")],
         "bus-1": ["Bus 1", () => this.selectBus(1)],
         "bus-2": ["Bus 2", () => this.selectBus(2)],
@@ -551,7 +553,7 @@ window.RJ = window.RJ || {};
       let fx = this.fxi[b][id];
       if (fx) return fx;
       const def = RJ.D4FX.byId(id);
-      if (!def || (def.worklet && !this.worklet)) return null;
+      if (!def || !def.make || (def.worklet && !this.worklet)) return null;
       fx = def.make(this.g.ctx);
       fx.def = def;
       this.st.params[id].forEach((v, i) => fx.set(i, v));
@@ -613,10 +615,14 @@ window.RJ = window.RJ || {};
       st.lofiBits = clamp(Math.round(+d.lofiBits) || RJ.D4_LOFI.bits, RJ.D4_LOFI.minBits, RJ.D4_LOFI.maxBits);
       st.lofiDown = clamp(Math.round(+d.lofiDown) || RJ.D4_LOFI.down, 1, RJ.D4_LOFI.maxDown);
       if (VELS.includes(d.vel)) st.vel = d.vel;
-      if (!RJ.D4FX.byId(st.mfx) || !RJ.D4FX.byId(st.mfx).mfx) st.mfx = "reverb";
-      [1, 2].forEach(b => { const id = d.fx && d.fx[b]; st.fx[b] = RJ.D4FX.byId(id) ? id : null; });
+      // Fase 3a: o estado guarda o id do efeito (a renumeracao nao muda nada); um numero antigo solto (F.01-F.09,
+      // MFX pad 1-4) e lido pelo RJ.D4FX.fromOld. MFX: na face nova vale qualquer MFX 1-24/extra (o DJFX e o 24)
+      st.mfx = RJ.D4FX.fromOld(d.mfx, true);
+      const mf = RJ.D4FX.byId(st.mfx);
+      if (!mf || !mf.make || !(this.nf ? mf.m : mf.mfx)) st.mfx = "reverb";
+      [1, 2].forEach(b => { const id = RJ.D4FX.fromOld(d.fx && d.fx[b]); st.fx[b] = id && RJ.D4FX.byId(id).make ? id : null; });
       RJ.D4FX.forEach(f => {
-        const p = d.params && d.params[f.id];
+        const p = d.params && (d.params[f.id] || (f.n && d.params[f.n]));
         if (Array.isArray(p)) st.params[f.id] = f.def.map((v, i) => (typeof p[i] === "number" ? clamp(p[i], 0, 1) : v));
       });
       if (Array.isArray(d.padLevel)) st.padLevel = st.padLevel.map((v, i) => (typeof d.padLevel[i] === "number" ? clamp(d.padLevel[i], 0, 1) : v));
@@ -763,7 +769,8 @@ window.RJ = window.RJ || {};
       if (this.delMode) { this.delPick(i); return; }
       if (this.smp && this.smp.stage !== "rec") { this.smpPick(i); return; }   // REC em espera: o pad escolhe o destino
       if (this.shift || this.shiftKey) { this.shiftUsed(); this.pickFile(i); return; }
-      if (this.mfxPick && t < 4) { this.pickMfx(t + 1); return; }
+      // MFX: [MFX] segurado + pad 1-12 = MFX 1-12 (+ [VINYL SIM] = 13-24); na janela de 5 s so os pads que piscam
+      if (this.nf ? this.mfxPadTakes(t) : this.mfxPick && t < 4) { this.pickMfx(this.nf ? this.mfxPadNum(t) : t + 1); return; }
       if (this.remainHeld) { this.remainPick(i); return; }   // REMAIN + pad: escolhe os alvos do efeito (o pad nao toca)
       // MARK: o pad do "so o start" de novo fecha no fim do sample; outro pad desiste; MARK + pad = "so o end"
       const mo = this.markOp;
@@ -979,13 +986,23 @@ window.RJ = window.RJ || {};
       if (this.setup) this.toggleSetup(false);
       const b = this.st.bus;
       if (name === "mfx" && (this.shift || this.shiftKey)) { this.shiftUsed(); this.startMfxPick(); return; }
+      // face nova: [MFX] + [VINYL SIM] + pad = MFX 13-24 (manual p. 18); na janela de 5 s o VINYL SIM troca 1-12 / 13-24
+      // a janela de 5 s so vale enquanto o MFX e o efeito do bus: outro botao de efeito a fecha
+      if (this.nf && this.mfxPick && name !== "mfx" && !(name === "vinyl" && this.isMfx(this.st.fx[b]))) this.endMfxPick();
+      if (this.nf && name === "mfx") { this.mfxSel = null; this.mfxPage2 = false; this.mfxVinyl = false; clearTimeout(this.mfxSelTimer); }
+      if (this.nf && name === "vinyl" && (this.mfxHeld() || this.mfxPick)) {
+        if (this.mfxHeld()) this.mfxVinyl = true; else { this.mfxPage2 = !this.mfxPage2; this.startMfxPick(); }
+        this.flash(this.mfxPage2 || this.mfxVinyl ? "13-" : "1-", "fx", 700);
+        this.renderPads();
+        return;
+      }
       const id = name === "mfx" ? this.st.mfx : name;
       if (this.remainHeld) { this.press = null; this.remainFx(id); return; }   // REMAIN + efeito = todos os pads (p. 19)
       // Effect Grab (manual p. 18): TAP TEMPO apertado + efeito = ligado so enquanto o botao do efeito estiver apertado
       if (this.tapHeld) {
         this.taps = [];   // o toque que segurou o TAP nao conta para o tempo (e desfaz o BPM que ele mudou)
         if (this.tapBpm0 != null && this.st.bpm !== this.tapBpm0) { this.st.bpm = this.tapBpm0; this.applyBpm(); this.dirty(); }
-        if (!this.fxAvailable(id)) { this.flash("Err", "fx"); this.press = null; return; }
+        if (!this.fxAvailable(id)) { this.fxErr(id); this.press = null; return; }
         // prev: o efeito que estava no bus; ao soltar ele volta (se era o mesmo, o Grab o desliga, como no manual)
         this.press = { name, id, bus: b, t: performance.now(), turnedOn: true, grab: true,
           prev: this.press && this.press.grab && this.press.bus === b ? this.press.prev : this.st.fx[b] };   // dois Grabs juntos: vale o de antes do 1o
@@ -993,18 +1010,26 @@ window.RJ = window.RJ || {};
         return;
       }
       const cur = this.st.fx[b];
-      const isOn = name === "mfx" ? !!(cur && RJ.D4FX.byId(cur).mfx) : cur === id;
+      const isOn = name === "mfx" ? !!(cur && this.isMfx(cur)) : cur === id;
       this.press = { name, t: performance.now(), turnedOn: !isOn };
       if (isOn) { this.setFx(b, null); this.endMfxPick(); this.fxOffReset(); return; }
-      if (!this.fxAvailable(id)) { this.flash("Err", "fx"); this.press.turnedOn = false; return; }
+      if (!this.fxAvailable(id)) { this.fxErr(id); this.press.turnedOn = false; return; }
       this.setFx(b, id);
       if (name === "mfx") this.startMfxPick();
     }
 
     fxUp(name) {
       const p = this.press;
+      if (this.nf && name === "vinyl" && this.mfxVinyl) { this.mfxVinyl = false; this.renderPads(); }   // soltou o VINYL do [MFX] + [VINYL SIM]
       if (p && p.name !== name) return;   // soltou outra tecla de efeito (dois dedos): o aperto que vale e o mais recente
       this.press = null;
+      // face nova: soltar o [MFX] depois de girar o CTRL 3 liga o MFX do numero escolhido (manual p. 18);
+      // escolhido por pad (ja ligou) ou pelo CTRL 3: soltar nao desliga (nao e o "segurar = so enquanto segura")
+      if (this.nf && p && name === "mfx" && !p.grab) {
+        this.mfxVinyl = false;
+        if (this.mfxSel != null) { const k = this.mfxSel; this.mfxSel = null; clearTimeout(this.mfxSelTimer); this.pickMfx(k, p); return; }
+        if (p.used) { this.renderPads(); return; }
+      }
       // Effect Grab: solta o botao, o efeito sai (vale com Hold e seja qual for o tempo apertado);
       // se havia OUTRO efeito ligado no bus antes do Grab, ele volta
       if (p && p.grab && p.name === name) {
@@ -1022,7 +1047,62 @@ window.RJ = window.RJ || {};
       this.retarget(); this.renderButtons(); this.dirty();
     }
 
-    fxAvailable(id) { const d = RJ.D4FX.byId(id); return !!d && (!d.worklet || this.worklet); }
+    fxAvailable(id) { const d = RJ.D4FX.byId(id); return !!d && !!d.make && (!d.worklet || this.worklet); }
+    /** Nao liga: efeito que ainda nao existe (PITCH, MFX sem som) = "---"; sem worklet = "Err". */
+    fxErr(id) { const d = RJ.D4FX.byId(id); this.flash(!d || d.soon || !d.make ? "---" : "Err", "fx"); }
+
+    /** A face nova (data-face="dcx"): efeitos na ordem do manual (5 diretos + MFX 1-24); a estavel segue F.01-F.09. */
+    get nf() { return !!(this.root && this.root.dataset.face === "dcx"); }
+    /** O efeito entra pelo [MFX]? Face nova: MFX 1-24 (o DJFX e o 24) e o extra; estavel: os 4 do MFX pad 1-4. */
+    isMfx(id) { const d = typeof id === "string" ? RJ.D4FX.byId(id) : id; return !!d && (this.nf ? !!d.m : !!d.mfx); }
+    /** A tecla de efeito que acende para o efeito id ("mfx" para os MFX). */
+    fxKey(id) { const d = id && RJ.D4FX.byId(id); return d ? (this.isMfx(d) ? "mfx" : id) : null; }
+    /** O visor do efeito: estavel "F.0n"; face nova "F.1".."F.5" (diretos, ordem do manual), "1".."24" (MFX), "StP" (extra). */
+    fxShow(f) {
+      if (!this.nf) return "F." + String(f.n).padStart(2, "0");
+      if (f.dir) return "F." + f.dir;
+      return f.m > 24 ? "StP" : String(f.m);
+    }
+    /** [MFX] apertado agora (dedo, MIDI ou teclado), fora do Effect Grab. */
+    mfxHeld() { const p = this.press; return !!(p && p.name === "mfx" && !p.grab); }
+    /** Pad da tela t -> numero do MFX (1-12, ou 13-24 com [VINYL SIM]). */
+    mfxPadNum(t) { return t + 1 + (this.mfxVinyl || this.mfxPage2 ? 12 : 0); }
+    /** O pad t escolhe MFX? Com [MFX] segurado: todos os 12; na janela de 5 s: so os que tem efeito (piscam). */
+    mfxPadTakes(t) {
+      if (this.remainHeld || this.markHeld) return false;   // REMAIN + pad (alvos) e MARK + pad vem antes
+      if (this.mfxHeld()) return true;
+      if (!this.mfxPick) return false;
+      const d = RJ.D4FX.byM(this.mfxPadNum(t));
+      return !!(d && this.fxAvailable(d.id));
+    }
+    /** Pad t aceso pelo MFX: na janela de 5 s ou com [MFX] segurado, os pads cujo MFX existe (1 Reverb, 12 Comp;
+     *  com [VINYL SIM]: 2 Lo-Fi, 12 DJFX). */
+    mfxPadLit(t) {
+      if (!this.mfxPick && !this.mfxHeld()) return false;
+      const d = RJ.D4FX.byM(this.mfxPadNum(t));
+      return !!(d && this.fxAvailable(d.id));
+    }
+    /** CTRL 3 com [MFX] segurado (ou na janela de 5 s): escolhe o numero 1-24 (25 = Stopper, extra); o visor mostra. */
+    mfxKnob(v) {
+      const k = clamp(1 + Math.round(v * (RJ.D4FX.MFX_MAX - 1)), 1, RJ.D4FX.MFX_MAX);
+      this.mfxSel = k;
+      if (this.press && this.press.name === "mfx") this.press.used = true;
+      this.flash(k > 24 ? "StP" : String(k), "fx", 1500);
+      this.renderMfxList();
+      // sem o [MFX] segurado (janela de 5 s, mouse): liga 0,7 s depois do ultimo giro
+      clearTimeout(this.mfxSelTimer);
+      if (!this.mfxHeld()) {
+        this.startMfxPick();
+        this.mfxSelTimer = setTimeout(() => { if (this.mfxSel != null && !this.mfxHeld()) { const n = this.mfxSel; this.mfxSel = null; this.pickMfx(n); } }, 700);
+      }
+    }
+    /** A lista impressa dos 24 MFX: o numero do visor (escolhendo, ou o MFX ligado no bus) fica marcado. */
+    renderMfxList() {
+      if (!this.nf || !this.root) return;
+      const f = this.curFx();
+      const n = this.on ? (this.mfxSel != null ? this.mfxSel : f && f.m ? f.m : null) : null;
+      $$(".dx-list li", this.root).forEach((li, k) => li.classList.toggle("on", n === k + 1));
+    }
 
     setFx(b, id) {
       const was = this.st.fx[b];
@@ -1037,6 +1117,7 @@ window.RJ = window.RJ || {};
       }
       this.st.fx[b] = id;
       if (id) this.lastFx = id;
+      if (id && this.nf && this.isMfx(id)) this.st.mfx = id;   // face nova: o DJFX (pela tecla escondida) tambem vira o MFX atual
       this.applyBus(b);
       this.showBase();
       this.renderCaps();
@@ -1049,12 +1130,32 @@ window.RJ = window.RJ || {};
       this.mfxTimer = setTimeout(() => this.endMfxPick(), 5000);
       this.renderPads();
     }
-    endMfxPick() { if (!this.mfxPick) return; this.mfxPick = false; clearTimeout(this.mfxTimer); this.renderPads(); }
+    endMfxPick() {
+      if (!this.mfxPick) return;
+      this.mfxPick = false; this.mfxPage2 = false; clearTimeout(this.mfxTimer);
+      if (this.mfxSel != null && !this.mfxHeld()) { this.mfxSel = null; clearTimeout(this.mfxSelTimer); }
+      this.renderPads(); this.renderMfxList();
+    }
 
-    /** MFX: pad 1 Reverb, 2 Lo-fi, 3 Compressor, 4 Stopper. */
-    pickMfx(k) {
-      const d = RJ.D4FX.mfx(k);
+    /** MFX. Estavel: pad 1 Reverb, 2 Lo-fi, 3 Compressor, 4 Stopper. Face nova: o numero do manual (1-24; 25 = Stopper). */
+    /** p: o aperto do [MFX] que escolheu (o soltar passa o dele, ja tirado de this.press). */
+    pickMfx(k, p = this.press) {
+      const d = this.nf ? RJ.D4FX.byM(k) : RJ.D4FX.mfx(k);
+      if (this.nf && p && p.name === "mfx") p.used = true;   // soltar o [MFX] nao desliga
       this.endMfxPick();
+      if (this.nf && (!d || !d.make)) {
+        // MFX do manual que ainda nao tem som: o numero aparece e depois "---"; o MFX atual nao muda.
+        // O aperto do [MFX] tinha desligado o MFX ligado: escolher um numero sem som devolve o que estava
+        if (p && p.name === "mfx" && !p.grab && !p.turnedOn && !this.st.fx[this.st.bus] && this.fxAvailable(this.st.mfx)) {
+          p.turnedOn = true;
+          this.setFx(this.st.bus, this.st.mfx);
+        }
+        clearTimeout(this.flashTimer);
+        this.drawDisplay(String(k), "fx");
+        this.flashTimer = setTimeout(() => this.flash("---", "fx", 800), 500);
+        this.renderMfxList();
+        return;
+      }
       if (!d || !this.fxAvailable(d.id)) { this.flash("Err", "fx"); return; }
       this.st.mfx = d.id;
       this.setFx(this.st.bus, d.id);
@@ -1081,6 +1182,10 @@ window.RJ = window.RJ || {};
 
     ctrlGet(k) {
       if (this.smp && k === 2) return this.st.inLevel;   // REC: o CTRL 3 e o nivel da entrada (manual p. 23), mesmo com REMAIN segurado
+      if (k === 2 && this.mfxChoosing()) {   // [MFX] + CTRL 3: a posicao do numero escolhido (ou do MFX atual)
+        const d = RJ.D4FX.byId(this.st.mfx), n = this.mfxSel != null ? this.mfxSel : d && d.m ? d.m : 1;
+        return (n - 1) / (RJ.D4FX.MFX_MAX - 1);
+      }
       if (this.remainHeld && !this.setup) { const f = this.curFx(); return this.preset[k] != null ? this.preset[k] : f ? this.st.params[f.id][k] : 0.5; }
       if (this.lofiPage()) {
         const L = RJ.D4_LOFI;
@@ -1096,6 +1201,8 @@ window.RJ = window.RJ || {};
     ctrlSet(k, v) {
       // REC: o CTRL 3 e o nivel da entrada, mesmo com REMAIN segurado
       if (this.smp && k === 2) { this.st.inLevel = v; this.applyInput(); this.flash(String(Math.round(v * 127)), "pad"); return; }
+      // face nova: segurar [MFX] e girar o CTRL 3 escolhe o MFX 1-24 (manual p. 18); vale tambem na janela de 5 s (mouse)
+      if (k === 2 && this.mfxChoosing()) { this.mfxKnob(v); return; }
       // REMAIN segurado + Ctrl: preselecao para o proximo efeito (visor "C-1".."C-3", manual p. 19); o efeito ligado nao muda
       if (this.remainHeld && !this.setup) { this.preset[k] = v; this.remainHeld.used = true; this.flash("C-" + (k + 1), "fx", 900); return; }
       if (this.lofiPage()) {
@@ -1121,7 +1228,27 @@ window.RJ = window.RJ || {};
       if (!f) { this.flash("---", "fx"); return; }
       this.st.params[f.id][k] = v;
       [1, 2].forEach(b => { const fx = this.fxi[b][f.id]; if (fx) fx.set(k, v); });
-      this.flash(String(Math.round(v * 127)), "fx");
+      if (!this.nf) { this.flash(String(Math.round(v * 127)), "fx"); return; }
+      // face nova: ao comecar a girar, o visor mostra o codigo do manual (CoF, rES, drV...) e depois o valor
+      const now = performance.now(), code = f.codes && f.codes[k], fmt = f.show && f.show[k];
+      const val = fmt ? fmt(v) : String(Math.round(v * 127));
+      const fresh = this.codeK !== k || this.codeFx !== f.id || now - this.codeAt > 1200;
+      this.codeAt = now;
+      if (code && fresh) { this.codeK = k; this.codeFx = f.id; this.codeUntil = now + 500; this.flash(code, "fx", 1100); }
+      else if (code && now < this.codeUntil) { clearTimeout(this.codeTimer); this.codeTimer = setTimeout(() => { if (this.codeK === k) this.flash(this.ctrlShow(k), "fx"); }, this.codeUntil - now); }
+      else this.flash(val, "fx");
+    }
+    /** O valor do Ctrl k do efeito atual como o visor mostra. */
+    ctrlShow(k) {
+      const f = this.curFx();
+      if (!f) return "---";
+      const v = this.st.params[f.id][k], fmt = f.show && f.show[k];
+      return fmt ? fmt(v) : String(Math.round(v * 127));
+    }
+    /** [MFX] segurado ou a janela de 5 s aberta (face nova): o CTRL 3 escolhe o numero. */
+    mfxChoosing() {
+      if (!this.nf || this.setup || this.remainHeld || this.sed || this.lofiPage()) return false;   // REMAIN (C-3), SAMPLE EDIT e LO-FI vem antes
+      return this.mfxHeld() || (this.mfxPick && this.isMfx(this.st.fx[this.st.bus]));
     }
 
     applyBpm() {
@@ -1347,7 +1474,7 @@ window.RJ = window.RJ || {};
       const now = performance.now(), beat = 60000 / this.st.bpm;
       const ph = ((now - this.tapT0) % beat + beat) % beat;
       t.classList.toggle("lit", !!(this.on && ph < Math.min(100, beat / 2)));
-      const key = id => { const d = id && RJ.D4FX.byId(id); return d ? (d.mfx ? "mfx" : id) : null; };
+      const key = id => this.fxKey(id);
       // efeito em todos os pads (REMAIN + efeito): o botao do efeito ligado pisca (manual p. 18)
       const ak = this.on && this.hasTargets() && this.st.fxAll ? key(this.st.fx[this.st.bus]) : null;
       if (this.allFx && this.allFx !== ak) {
@@ -1639,13 +1766,13 @@ window.RJ = window.RJ || {};
     remainFx(id) {
       const st = this.st, b = st.bus, rh = this.remainHeld;
       rh.used = true;
-      if (!this.fxAvailable(id)) { this.flash("Err", "fx"); return; }
+      if (!this.fxAvailable(id)) { this.fxErr(id); return; }
       if (st.fx[b] !== id) { this.setFx(b, id); st.fxAll = true; }
       else st.fxAll = !st.fxAll;
       st.fxPads = null;
       this.retarget();
       clearTimeout(this.flashTimer);
-      this.showBase();   // o visor mostra o efeito ("F.0n"); "todos" e o botao piscando (o manual nao tem codigo)
+      this.showBase();   // o visor mostra o efeito ("F.0n"; face nova "F.1"/"14"); "todos" e o botao piscando (o manual nao tem codigo)
       this.renderPads(); this.renderButtons();
       this.dirty();
     }
@@ -1922,7 +2049,7 @@ window.RJ = window.RJ || {};
         return;
       }
       const f = this.curFx();
-      if (!this.setup && f) this.drawDisplay("F." + String(f.n).padStart(2, "0"), "fx");
+      if (!this.setup && f) this.drawDisplay(this.fxShow(f), "fx");
       else this.drawDisplay(String(this.st.bpm), "bpm");
     }
 
@@ -1954,9 +2081,9 @@ window.RJ = window.RJ || {};
       if (!this.btn) return;
       const st = this.st, b = st.bus, other = b === 1 ? 2 : 1;
       const cur = st.fx[b], oth = st.fx[other];
-      const fxBtn = id => (RJ.D4FX.byId(id) && RJ.D4FX.byId(id).mfx ? "mfx" : id);
+      const fxBtn = id => this.fxKey(id);
       const face = this.root && this.root.dataset.face === "dcx";
-      ["filter", "isolator", "delay", "vinyl", "djfx", "mfx"].forEach(k => {
+      ["filter", "pitch", "isolator", "delay", "vinyl", "djfx", "mfx"].forEach(k => {
         const el = this.btn["fx-" + k];
         if (!el) return;
         const on = cur && fxBtn(cur) === k, bl = oth && fxBtn(oth) === k;
@@ -1987,6 +2114,7 @@ window.RJ = window.RJ || {};
       this.led("remain", !st.fxAll && !!st.fxPads);   // REMAIN aceso = o efeito esta em varios pads escolhidos
       for (let k = 0; k < BANKS && BANKS > 1; k++) this.led("bank-" + BANK_NAMES[k].toLowerCase(), k === st.bank);
       this.renderModes();
+      this.renderMfxList();
       // teclas que ficam "presas": Set-up e Shift
       const held = el => !!(el.dataset.press || el.dataset.midi);   // ponteiro ou MIDI (Learn) segurando
       if (this.btn.setup) this.btn.setup.classList.toggle("down", this.setup || held(this.btn.setup));
@@ -2032,7 +2160,7 @@ window.RJ = window.RJ || {};
         } else {
           // DEL: pads com sample piscam (aceso + .blink); os escolhidos ficam acesos sem piscar
           // REC em espera: os pads vazios piscam; o escolhido fica aceso (e segue aceso gravando)
-          el.classList.toggle("hit", dm ? !!this.buf[i] : wait ? !this.buf[i] : !!this.voice[i] || (this.mfxPick && t < 4) || !!(sm && sm.pad === i));
+          el.classList.toggle("hit", dm ? !!this.buf[i] : wait ? !this.buf[i] : !!this.voice[i] || (this.nf ? this.mfxPadLit(t) : this.mfxPick && t < 4) || !!(sm && sm.pad === i));
           el.classList.toggle("blink", !!(dm && this.buf[i] && !dm.sel.has(i)) || !!(wait && !this.buf[i] && sm.pad !== i));
         }
         el.title = this.st.pads[i].name || "";
