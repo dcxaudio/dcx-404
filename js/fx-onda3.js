@@ -95,6 +95,150 @@
     }
   }
   registerProcessor("d4-onda3", D4Onda3);
+
+  /* Onda 3b. A grade dos dois (Slicer e BPM Looper) conta a partir do momento em que o efeito entra no bus ("rst"
+     mudou): pos = tempos desde entao, somando bpm / 60 / taxa a cada amostra (o BPM pode mudar no meio sem salto). */
+
+  /* SLICER: 16 padroes de 16 passos (desenho proprio). p0 padrao 0-15, p1 ciclos do padrao por compasso (1, 2, 4, 8),
+     p2 realimentacao do flanger (0 = so o corte), bpm. Cada passo abre ou fecha; a rampa (2 ms, menos se o passo for
+     curto) fica centrada na linha da grade: o meio do corte cai exatamente nela. O flanger (atraso de 1 a 6 ms, uma
+     varrida por compasso) vem antes do corte: com o passo fechado nada sai. */
+  const PTN = ["x.x.x.x.x.x.x.x.", "xxx.xxx.xxx.xxx.", "x...x...x...x...", "xx..xx..xx..xx..",
+               "xxxxxxxx........", "x..x..x..x..x.x.", "x.x.xx.x.x.xx.x.", "xxx.x.xxx.x.x.x.",
+               "x...xx..x.x.xxx.", "xx.x.xx.xx.x.xx.", "x.......x.x.x.x.", "xxxx..xx..xxxx..",
+               ".x.x.x.x.x.x.x.x", "x.xx.x.xx.xx.x.x", "xxxxxxxxxxxx.x.x", "x.x.x.x.xxxxxxxx"].map(s => s.split("").map(c => c === "x" ? 1 : 0));
+  class D4Slicer extends AudioWorkletProcessor {
+    static get parameterDescriptors() { return ["p0", "p1", "p2", "bpm", "rst"].map(name => ({ name, defaultValue: name === "bpm" ? 90 : name === "p1" ? 1 : 0, automationRate: "k-rate" })); }
+    constructor() {
+      super();
+      let N = 1; while (N < sampleRate * 0.008 + 8) N *= 2;
+      this.N = N; this.M = N - 1; this.buf = [new Float32Array(N), new Float32Array(N)]; this.rs = 0; this.fb = null;
+      this.reset();
+    }
+    reset() { this.pos = 0; this.w = 0; this.g = null; this.buf[0].fill(0); this.buf[1].fill(0); }
+    process(inputs, outputs, P) {
+      const inp = inputs[0] || [], out = outputs[0], n = out[0].length, sr = sampleRate, M = this.M;
+      if (P.rst[0] !== this.rs) { this.rs = P.rst[0]; this.reset(); }
+      const bpm = Math.max(20, Math.min(300, P.bpm[0] || 90)), pt = PTN[Math.max(0, Math.min(15, Math.round(P.p0[0]) || 0))];
+      const cyc = Math.max(1, Math.min(8, P.p1[0] || 1)), fbT = Math.max(0, Math.min(0.75, P.p2[0] || 0));
+      if (this.fb == null) this.fb = fbT;
+      const db = bpm / 60 / sr;                        // tempos por amostra
+      const stepB = 4 / cyc / 16;                      // um passo, em tempos
+      const stepS = stepB / db;                        // um passo, em amostras
+      const half = Math.min(0.001 * sr, stepS / 6);    // meia rampa (amostras)
+      const L = inp[0] || [], R = inp[1] || inp[0] || [], oL = out[0], oR = out[1] || out[0];
+      for (let j = 0; j < n; j++) {
+        this.fb += (fbT - this.fb) * 0.002;
+        const fb = this.fb, m = Math.min(1, fb * 3), nrm = Math.sqrt(1 - fb * fb);
+        // o corte: passo atual, a distancia (em amostras) ate a linha mais perto, e o passo do outro lado dela
+        const sp = this.pos / stepB, s = Math.floor(sp), u = (sp - s) * stepS, a = pt[s & 15];
+        let g = a;
+        if (u < half) { const p = pt[(s - 1) & 15]; if (p !== a) g = p + (a - p) * (0.5 + 0.5 * u / half); }
+        else if (stepS - u < half) { const b = pt[(s + 1) & 15]; if (b !== a) g = a + (b - a) * (0.5 - 0.5 * (stepS - u) / half); }
+        // flanger: atraso em triangulo, uma varrida por compasso
+        const ph = (this.pos / 4) % 1, tri = ph < 0.5 ? ph * 2 : 2 - ph * 2, D = (0.001 + 0.005 * tri) * sr;
+        const rp = this.w - D, ri = Math.floor(rp), rf = rp - ri;
+        let xl = L[j] || 0, xr = R[j] || 0;
+        if (!(xl > -8 && xl < 8)) xl = 0;
+        if (!(xr > -8 && xr < 8)) xr = 0;
+        // trocar padrao ou RATE no meio de um passo faria o corte saltar: o ganho anda no maximo na velocidade da rampa
+        // (as rampas da grade passam iguais; um salto vira uma rampa de 2 ms)
+        const sl = 0.5 / half * 1.001;
+        if (this.g == null) this.g = g;
+        this.g += Math.max(-sl, Math.min(sl, g - this.g)); g = this.g;
+        const bl = this.buf[0], br = this.buf[1], wi = this.w & M, i0 = ri & M, i1 = (ri + 1) & M;
+        const dl = bl[i0] + (bl[i1] - bl[i0]) * rf, dr = br[i0] + (br[i1] - br[i0]) * rf;   // o comb: entrada + realimentacao, D atras
+        let vl = xl + fb * dl; if (vl > -1e-20 && vl < 1e-20) vl = 0;
+        let vr = xr + fb * dr; if (vr > -1e-20 && vr < 1e-20) vr = 0;
+        bl[wi] = vl; br[wi] = vr;
+        const dg = 1 - 0.5 * m, wg = 0.5 * m * nrm;
+        this.w++; this.pos += db;
+        oL[j] = knee(g * (xl * dg + wg * dl)); if (oR !== oL) oR[j] = knee(g * (xr * dg + wg * dr));
+      }
+      return true;
+    }
+  }
+  registerProcessor("d4-slicer", D4Slicer);
+
+  /* BPM LOOPER: p0 comprimento (tempos), p1 TIMING (0 = oFF, 1-8 = a colcheia do compasso em que o loop entra sozinho,
+     ate o fim do compasso), p2 LOOP SW (1 = loop ligado direto), bpm. Ao disparar, grava dali para a frente: o primeiro
+     comprimento sai ao vivo e depois repete (o comprimento fica preso no disparo: round(tempos x 60 / BPM x taxa)).
+     A volta do loop cruza X amostras (4 ms) com a continuacao gravada depois do fim: a emenda e a do proprio som.
+     Soltar (fim do compasso ou LOOP SW desligado) volta ao vivo em X amostras. Ao entrar no bus nada do loop velho fica. */
+  class D4BpmLoop extends AudioWorkletProcessor {
+    static get parameterDescriptors() { return ["p0", "p1", "p2", "bpm", "rst"].map(name => ({ name, defaultValue: name === "bpm" ? 90 : name === "p0" ? 1 : 0, automationRate: "k-rate" })); }
+    constructor() {
+      super();
+      this.Nmax = Math.ceil(sampleRate * 6.2);
+      this.buf = [new Float32Array(this.Nmax), new Float32Array(this.Nmax)]; this.rs = 0;
+      this.reset();
+    }
+    reset() { this.pos = 0; this.st = 0; this.c = 0; this.rel = 0; this.sw = 0; this.win = false; this.started = false; this.fo = null; this.pb = 0; this.ly = 0; this.ry = 0; }
+    trig(lenB, bpm) {
+      const sr = sampleRate;
+      // disparo em cima de um loop que ja repetia (TIMING 1 na linha do compasso, ou LOOP SW por cima do TIMING): guarda
+      // as proximas amostras dele para cruzar com o vivo enquanto a gravacao nova recomeca do 0
+      this.fo = null;
+      if (this.st && this.c >= this.Lc && this.c < this.Lc + this.X) {
+        // ainda na primeira emenda (a continuacao depois do fim nao foi toda gravada): segura a ultima saida e cruza dela
+        const X = this.X; this.fo = [new Float32Array(X).fill(this.ly), new Float32Array(X).fill(this.ry)]; this.fk = 0;
+      } else if (this.st && this.c >= this.Lc) {
+        const X = this.X, k0 = this.st === 2 ? Math.min(1, this.rel / X) : 0;
+        this.fo = [new Float32Array(X), new Float32Array(X)]; this.fk = k0;
+        for (let i = 0; i < X; i++) { const q = (this.c - this.Lc + i) % this.Lc; this.fo[0][i] = this.loopAt(0, q); this.fo[1][i] = this.loopAt(1, q); }
+      }
+      this.Lc = Math.max(64, Math.min(this.Nmax - Math.ceil(0.004 * sr) - 8, Math.round(lenB * 60 / bpm * sr)));
+      this.X = Math.max(8, Math.min(Math.round(0.004 * sr), Math.floor(this.Lc / 4)));
+      this.st = 1; this.c = 0; this.rel = 0;
+    }
+    loopAt(ch, q) {   // a amostra q (0..L-1) do loop, com a emenda da volta
+      const b = this.buf[ch], X = this.X;
+      return q < X ? b[q] * (q / X) + b[this.Lc + q] * (1 - q / X) : b[q];
+    }
+    process(inputs, outputs, P) {
+      const inp = inputs[0] || [], out = outputs[0], n = out[0].length, sr = sampleRate;
+      if (P.rst[0] !== this.rs) { this.rs = P.rst[0]; this.reset(); }
+      const bpm = Math.max(20, Math.min(300, P.bpm[0] || 90)), lenB = Math.max(0.05, P.p0[0] || 1);
+      const tim = Math.max(0, Math.min(8, Math.round(P.p1[0]) || 0)), sw = P.p2[0] >= 0.5 ? 1 : 0;
+      const db = bpm / 60 / sr, L = inp[0] || [], R = inp[1] || inp[0] || [], oL = out[0], oR = out[1] || out[0];
+      for (let j = 0; j < n; j++) {
+        // o que manda agora: LOOP SW ligado = loop sempre; senao o TIMING (janela da colcheia tim ate o fim do compasso)
+        const bar = this.pos % 4, inWin = tim > 0 && bar >= (tim - 1) * 0.5 - 1e-9;
+        if (sw && (!this.sw || !this.started)) this.trig(lenB, bpm);                    // ligou o LOOP SW (ou entrou no bus com ele ligado)
+        else if (!sw && this.sw && this.st) { this.st = 2; this.rel = 0; }               // desligou: volta ao vivo
+        else if (!sw) {
+          const newBar = this.started && bar < this.pb;   // o compasso virou nesta amostra   // passou a linha do compasso nesta amostra
+          if (newBar && this.st === 1) { this.st = 2; this.rel = 0; }                    // fim do compasso: solta
+          if (inWin && (!this.win || (newBar && tim === 1))) this.trig(lenB, bpm);      // entrou na janela: dispara
+        }
+        this.sw = sw; this.win = inWin; this.started = true; this.pb = bar;
+        let xl = L[j] || 0, xr = R[j] || 0;
+        if (!(xl > -8 && xl < 8)) xl = 0;
+        if (!(xr > -8 && xr < 8)) xr = 0;
+        let yl = xl, yr = xr;
+        if (this.st) {
+          const Lc = this.Lc, c = this.c;
+          if (c < Lc + this.X) { this.buf[0][c] = xl; this.buf[1][c] = xr; }            // grava o comprimento e a emenda
+          let ll = xl, lr = xr;
+          if (c >= Lc) { const q = (c - Lc) % Lc; ll = this.loopAt(0, q); lr = this.loopAt(1, q); }
+          if (this.st === 2) {                                                          // soltando: cruza com o vivo
+            const k = Math.min(1, this.rel / this.X);
+            yl = ll + (xl - ll) * k; yr = lr + (xr - lr) * k;
+            if (++this.rel > this.X) this.st = 0;
+          } else { yl = ll; yr = lr; }
+          if (this.fo && c < this.fo[0].length) {                                       // o loop velho saindo (disparo por cima dele)
+            const k = this.fk + (1 - this.fk) * (c / this.fo[0].length), a = this.fo[0][c], b = this.fo[1][c];
+            yl = a + (yl - a) * k; yr = b + (yr - b) * k;
+          } else this.fo = null;
+          this.c++;
+        }
+        this.pos += db; this.ly = yl; this.ry = yr;
+        oL[j] = knee(yl); if (oR !== oL) oR[j] = knee(yr);
+      }
+      return true;
+    }
+  }
+  registerProcessor("d4-bpmloop", D4BpmLoop);
   `;
 
   const ok3 = new WeakMap();
@@ -133,6 +277,13 @@
     return c;
   })();
   const knee = ctx => { const w = ctx.createWaveShaper(); w.curve = KNEE; return w; };
+  // o mesmo teto para somas que passam de 1 (Octave, Chromatic PS): le de -2 a 2 (ganho 0,5 antes, curva em 2u)
+  const KNEE2 = (() => {
+    const c = new Float32Array(8193);
+    for (let i = 0; i < c.length; i++) { const x = (i / 4096 - 1) * 2, a = Math.abs(x); c[i] = a <= 0.9 ? x : Math.sign(x) * (0.9 + 0.09 * Math.tanh((a - 0.9) / 0.09)); }
+    return c;
+  })();
+  const knee2 = ctx => { const g = ctx.createGain(), w = ctx.createWaveShaper(); g.gain.value = 0.5; w.curve = KNEE2; g.connect(w); return { input: g, output: w }; };
   // saturacao de fita no laco: tanh(2,4u)/2,4 para u em -1..1 (ganho 1 no sinal baixo, teto ~0,42: as repeticoes
   // de um som alto saem comprimidas, como fita cheia; o laco nunca dispara). O primeiro eco nao passa por ela
   const SAT = (() => {
@@ -270,11 +421,104 @@
     };
   }
 
+  /* ================================================================ Onda 3b */
+  const idx = (v, n) => Math.round(clamp(v, 0, 1) * (n - 1));
+  // Slicer: RATE t1-t8 = o padrao inteiro em 1, 1/2, 1/4 ou 1/8 de compasso (manual p. 22)
+  const SLICE_RATE = [1, 2, 4, 8], SLICE_SHOW = ["t1", "t2", "t4", "t8"];
+  // BPM Looper: LENGTH em notas (tempos: 1 = seminima), como as do Delay; TIMING oFF e 1-8 (colcheias do compasso)
+  const LOOP_LEN = [1 / 8, 1 / 4, 1 / 2, 1, 2, 4], LOOP_SHOW = ["t32", "t16", "t8", "t4", "t2", "t1"];
+  const semi12 = v => Math.round((clamp(v, 0, 1) - 0.5) * 24);
+  // o visor de 3 caracteres do Chromatic PS (manual: "-C" a "C"): 10, 11 e 12 semitons viram A, b e C
+  const showSemi12 = v => { const s = semi12(v), a = Math.abs(s); return (s < 0 ? "-" : "") + (a < 10 ? String(a) : "AbC"[a - 10]); };
+  RJ.d4Onda3b = {
+    slicer: { ptn: v => idx(v, 16), rate: v => SLICE_RATE[idx(v, 4)], fb: v => 0.75 * clamp(v, 0, 1) },
+    looper: { len: v => LOOP_LEN[idx(v, 6)], tim: v => idx(v, 9), sw: v => (v >= 0.5 ? 1 : 0) },
+    octave: { lvl: v => clamp(v, 0, 1) },
+    cps: { semi: semi12, mix: bal },
+    PTN_SHOW: Array.from({ length: 16 }, (_, i) => "P" + String(i + 1).padStart(2, "0")),
+  };
+  const O3b = RJ.d4Onda3b;
+
+  /** Um efeito de grade (Slicer, BPM Looper) no worklet name. map[i] = [parametro, funcao 0-1 -> unidade].
+   *  bpm(b) manda o tempo; ao entrar no bus a grade recomeca do zero (e o loop velho some). */
+  function gridFx(name, map) {
+    return function (ctx) {
+      if (ok3.get(ctx) !== true) {
+        console.warn(name + " indisponivel: efeito sem som");
+        const g = ctx.createGain();
+        return { input: g, output: g, set() {} };
+      }
+      const node = new AudioWorkletNode(ctx, name, {
+        numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2],
+        channelCount: 2, channelCountMode: "explicit", channelInterpretation: "speakers",
+      });
+      const P = k => node.parameters.get(k);
+      let rst = 0, offAt = -1;
+      return {
+        input: node, output: node,
+        set(i, v) { const m = map[i]; if (m) P(m[0]).setValueAtTime(m[1](clamp(v, 0, 1)), ctx.currentTime); },
+        bpm(b) { P("bpm").setValueAtTime(clamp(+b || 90, 20, 300), ctx.currentTime); },
+        // do comeco ao entrar (grade zerada, nada do loop velho). Religado em menos de 0,1 s o molhado de antes ainda
+        // esta saindo: segue de onde estava (zerar ali seria um degrau), como no Noise Gen e no Subsonic
+        active(a) {
+          if (!a) { offAt = ctx.currentTime; return; }
+          if (offAt < 0 || ctx.currentTime - offAt > 0.1) P("rst").setValueAtTime(++rst, ctx.currentTime);
+        },
+      };
+    };
+  }
+  /** 17. Slicer: TIMING PTN (P01-P16), RATE (t1-t8), FEEDBACK (Fdb, Effect Limit). */
+  const slicer = gridFx("d4-slicer", [["p0", O3b.slicer.ptn], ["p1", O3b.slicer.rate], ["p2", O3b.slicer.fb]]);
+  /** 23. BPM Looper: LENGTH (LEn, Effect Limit), TIMING (oFF, 1-8), LOOP SW (oFF, on). */
+  const bpmLooper = gridFx("d4-bpmloop", [["p0", O3b.looper.len], ["p1", O3b.looper.tim], ["p2", O3b.looper.sw]]);
+
+  /** Uma voz do d4-pitch (o PITCH aprovado, do fx.js) so no efeito: sem realimentacao, balance todo no efeito. */
+  const voice = (ctx, semi) => new AudioWorkletNode(ctx, "d4-pitch", {
+    numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2],
+    channelCount: 2, channelCountMode: "explicit", channelInterpretation: "speakers",
+    parameterData: { semi, fb: 0, bal: 1 },
+  });
+  /** 11. Octave: -2OCT LEVEL (oC2), -1OCT LEVEL (oC1), DIRECT LEVEL (dir). Duas vozes do d4-pitch (-24 e -12 semitons)
+   *  e o direto, cada um no seu nivel, somados; teto suave no fim. */
+  function octave(ctx) {
+    const input = ctx.createGain(), output = ctx.createGain(), sum = ctx.createGain(), top = knee2(ctx);
+    const v2 = voice(ctx, -24), v1 = voice(ctx, -12), g = [ctx.createGain(), ctx.createGain(), ctx.createGain()];
+    input.connect(v2).connect(g[0]).connect(sum);
+    input.connect(v1).connect(g[1]).connect(sum);
+    input.connect(g[2]).connect(sum);
+    sum.connect(top.input); top.output.connect(output);
+    return { input, output, set(i, v) { if (g[i]) glide(g[i].gain, O3b.octave.lvl(v), ctx); } };
+  }
+  /** 19. Chromatic PS: PITCH 1, PITCH 2 (-12 a +12 semitons, visor "-C" a "C"), BALANCE (bAL: esquerda so o direto,
+   *  centro os dois cheios, direita so as vozes). Duas vozes do d4-pitch, cada uma a -3 dB. */
+  function chromaticPs(ctx) {
+    const input = ctx.createGain(), output = ctx.createGain(), dry = ctx.createGain(), wet = ctx.createGain(), sum = ctx.createGain(), top = knee2(ctx);
+    const v = [voice(ctx, 0), voice(ctx, 0)];
+    wet.gain.value = 0.5;
+    input.connect(dry).connect(sum);
+    v.forEach(n => { const h = ctx.createGain(); h.gain.value = Math.SQRT1_2; input.connect(n).connect(h).connect(wet); });
+    wet.connect(sum); sum.connect(top.input); top.output.connect(output);
+    return {
+      input, output,
+      set(i, x) {
+        if (i < 2) v[i].parameters.get("semi").setValueAtTime(O3b.cps.semi(x), ctx.currentTime);
+        if (i === 2) { const [a, b] = O3b.cps.mix(x); glide(dry.gain, a, ctx); glide(wet.gain, b, ctx); }
+      },
+    };
+  }
+
   /* ================================================================ registro (como no fx.js: m = o numero do MFX) */
   const add = [
     { id: "tapeecho", m: 2, name: "Tape Echo", caps: ["Rate", "Intensity", "Balance"], codes: ["rAt", "int", "bAL"], def: [0.35, 0.45, 0.5], lim: { 1: [0, 0.7] }, make: tapeEcho },
     { id: "noisegen", m: 15, name: "Noise Gen", caps: ["Color", "Quality", "Level"], codes: ["CoL", "qLt", "LEV"], def: [0.5, 0.3, 0.5], lim: { 1: [0, 0.7], 2: 0.75 }, make: noiseGen, worklet: true },
     { id: "ccancel", m: 21, name: "C.Canceler", caps: ["L-R Bal", "Low", "High"], codes: ["L-r", "Lo", "Hi"], def: [0.5, 0.5, 0.25], make: cCanceler },
+    { id: "octave", m: 11, name: "Octave", caps: ["-2 Oct", "-1 Oct", "Direct"], codes: ["oC2", "oC1", "dir"], def: [0.4, 0.7, 1], make: octave, worklet: true },
+    { id: "slicer", m: 17, name: "Slicer", caps: ["Pattern", "Rate", "Feedbk"], codes: [null, null, "Fdb"], show: [v => O3b.PTN_SHOW[O3b.slicer.ptn(v)], v => SLICE_SHOW[idx(v, 4)], null],
+      def: [0, 0, 0.3], lim: { 2: [0, 0.7] }, make: slicer, worklet: true },
+    { id: "chromps", m: 19, name: "Chromatic PS", caps: ["Pitch 1", "Pitch 2", "Balance"], codes: [null, null, "bAL"], show: [showSemi12, showSemi12, null],
+      def: [0.5 + 4 / 24, 0.5 + 7 / 24, 0.5], make: chromaticPs, worklet: true },
+    { id: "bpmloop", m: 23, name: "BPM Looper", caps: ["Length", "Timing", "Loop"], codes: ["LEn", null, null], show: [v => LOOP_SHOW[idx(v, 6)], v => { const t = O3b.looper.tim(v); return t ? String(t) : "oFF"; }, v => (v >= 0.5 ? "on" : "oFF")],
+      def: [0.4, 7 / 8, 0], lim: { 0: [1, 0.7] }, make: bpmLooper, worklet: true },
     { id: "subsonic", m: 22, name: "Subsonic", caps: ["Pitch", "Thresh", "Balance"], codes: ["Pit", "tHr", "bAL"], def: [0.7, 0.4, 0.5], make: subsonic, worklet: true },
   ];
   add.forEach(f => { if (!RJ.D4FX.byId(f.id) && !RJ.D4FX.byM(f.m)) RJ.D4FX.push(f); });
