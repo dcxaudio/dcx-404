@@ -1,13 +1,24 @@
 # DCX 404
 
-Sampler de performance que roda no navegador: 16 pads, 9 efeitos ao vivo em dois buses, entrada com efeito e reamostragem. É um projeto open source da [DCX Audio](https://github.com/dcxaudio), inspirado nos samplers de performance de mesa.
+Sampler de performance que roda no navegador, inspirado no SP-404: 12 pads por banco em 5 bancos (A–E, 60 pads), 5 efeitos diretos, 24 MFX numerados como na lista impressa do SP-404, gravação da entrada e reamostragem. É um projeto open source da [DCX Audio](https://github.com/dcxaudio).
 
-- Solte um arquivo de áudio num pad, ou aperte **Shift** e o pad para escolher o arquivo.
-- Teclado: `1`–`4`, `Q`–`R`, `A`–`F` e `Z`–`V` tocam os 16 pads. MIDI: canal 10, notas 36 a 51 (os pads do Arturia Minilab3).
-- Escolha o **Bus**, aperte um efeito e gire **Ctrl 1–3**. O display mostra o efeito e o valor.
-- O botão **MIDI Learn** no alto da página aprende qualquer controle do painel.
-- O manual está em [docs/manual.md](docs/manual.md).
+O painel novo (o cinza do Figma, "DX 404") está em [`novo/`](novo/). A página da raiz continua sendo a versão estável antiga (16 pads, 9 efeitos), sem mudanças.
 
+## O que o painel novo faz
+
+- **Pads e bancos:** 12 pads por banco, bancos A–E. Teclado: `1`–`4`, `Q`–`R`, `A`–`F` tocam os pads; `A`–`E` no painel trocam o banco; `C` e `V` vão ao banco anterior e ao próximo. `Z` é HOLD e `X` é SUB PAD (repete o pad em 1/16 no BPM). MIDI (canal 10): notas 36–47 são os pads, 48 Hold, 49 Sub Pad, 50 e 51 banco anterior e próximo (os pads do Arturia Minilab3).
+- **Carregar som:** solte um arquivo de áudio num pad, ou segure **Shift** (do teclado) e toque o pad.
+- **Efeitos:** os 5 diretos (FILTER+DRIVE, PITCH, DELAY, ISOLATOR, VINYL SIM) e os MFX 1–24. Aperte o efeito e gire **Ctrl 1–3**; o visor mostra o código do parâmetro e depois o valor. Para os MFX, segure **MFX** e gire o Ctrl 3, ou segure MFX e toque um pad.
+  - **Onda 1:** PITCH (pitch shifter em tempo real, de -24 a +24 semitons, com feedback e balance), DELAY com tempo em nota no BPM, VINYL SIM com compressor, Reverb (MFX 1), Comp (12), Lo-Fi (14, ainda em ajuste) e DJFX Looper (24). Há também o extra Stopper/Back Spin.
+  - **Onda 2:** Chorus (3), Flanger (4), Phaser (5), Tremolo/Pan (6), Distortion (7), Overdrive (8), Fuzz (9), Wah (10) e Ring Mod (18).
+  - Os MFX que ainda não têm som mostram o número e `---`.
+- **Gravar e marcar:** **REC** grava a entrada num pad (escolha a fonte em **SOURCE**; **STEREO** grava em 2 canais), **REMAIN** mostra o tempo livre de gravação e escolhe a que pads o efeito vale, **MARK** marca o trecho do pad, **DEL** apaga pads. Há também **TAP TEMPO** e **TIME/BPM**.
+- **Reamostragem:** grava o que sai do 404 (com os efeitos) num pad.
+- **Salvar e abrir disquete:** os botões na barra de cima salvam e abrem o estado inteiro (60 pads, efeitos, volume, BPM, nomes e modos) num arquivo `…-dcx-404.json`. O mesmo botão abre o disquete ou o projeto `.zip` do [DCX Studio](https://github.com/dcxaudio/dcx-studio), que só tem 16 pads (entram A1–A12 e B1–B4).
+- **MIDI Learn:** o botão no alto da página aprende qualquer controle do painel.
+- Ainda sem ação: Pattern Sequencer e MIC (decorativo).
+
+Detalhes e códigos de visor de cada efeito estão no [manual](docs/manual.md); o histórico, no [CHANGELOG](CHANGELOG.md).
 
 ## Rodar no seu computador
 
@@ -21,18 +32,20 @@ git clone --recurse-submodules https://github.com/dcxaudio/dcx-404.git
 cd dcx-404 && python3 -m http.server 8000
 ```
 
-Depois abra `http://localhost:8000`. Não tem build nem dependências. Os efeitos com AudioWorklet precisam de `http://` (não abrem por `file://`).
+Depois abra `http://localhost:8000/novo/` (painel novo) ou `http://localhost:8000` (versão estável) e toque em LIGAR. Não tem build nem dependências. Os efeitos com AudioWorklet precisam de `http://` (não abrem por `file://`).
 
 ## Estrutura
 
 ```
-index.html            página solo (host do dcx-core com só o 404)
-js/solo.js            monta a página: host, teclado, mapa MIDI padrão, tela de ligar
-js/dcx404.js          o aparelho: pads, buses, entrada, Resample, display e armazenamento
-js/fx.js              os 9 efeitos e o AudioWorklet (Looper, Stopper, Lo-fi, gravação)
-css/dcx404.css        o painel da versão estável (mockup v4)
-novo/                 a face nova do Figma (Fase 1: peças SVG, 12 pads, bancos A–E), sem substituir a estável
+index.html            página estável (host do dcx-core com só o 404, 16 pads)
+js/solo.js            monta a página estável: host, teclado, mapa MIDI, tela de ligar
+js/dcx404.js          o motor do aparelho (usado pelas duas faces): pads, bancos, buses, entrada, REC, Resample, display e armazenamento
+js/fx.js              os efeitos e os AudioWorklets (PITCH, Looper, Stopper, Lo-Fi, modulação, drives)
+css/dcx404.css        o painel da versão estável
+novo/                 o painel novo do Figma: index.html, js/solo.js, js/abrir.js (disquete), css, fontes e 69 SVG
+beta-2/               versão intermediária anterior
 docs/manual.md        manual curto
+CHANGELOG.md          histórico de mudanças
 vendor/dcx-core/      submódulo (v1.0.0)
 ```
 
