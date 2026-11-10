@@ -290,6 +290,8 @@
     }, true);
     window.addEventListener("keydown", e => { if (upPick && e.code === "Escape") upSet(false, "Nada mudou.", 3000); });
     d404.el.file.addEventListener("change", () => { if (/escolha o arquivo/.test(upMsg.textContent)) upSay("", 0); });
+    // arquivo subido com silencio no comeco: o motor corta e avisa so aqui ("Cortei 23 ms de silêncio do começo.")
+    d404.onLoadNote = t => upSay(t, 5000);
 
     // Painel Config (como o do DCX Studio, js/bar.js #cfg): o que nao e da maquina (MIDI Learn, Teclas,
     // disquete, ajuda, creditos). O botao da barra abre e fecha; Esc e tocar fora fecham.

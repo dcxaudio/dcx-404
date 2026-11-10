@@ -735,8 +735,32 @@ window.RJ = window.RJ || {};
       return !!((sm && sm.pad === s && (wait || sm.stage === "rec")) || (this.stoppingSmp && this.stoppingSmp.pad === s) || (this.rec && this.rec.pad === s) || (this.stoppingRec && this.stoppingRec.pad === s));
     }
 
-    /** Carrega um arquivo de audio no pad i (estereo, ate 2 canais). */
-    async loadFile(i, file) {
+    /**
+     * Corta o silencio do comeco de um sample subido (o atraso toque->som que vinha do arquivo).
+     * O primeiro ponto em que algum canal passa de -60 dBFS (0,001 de pico), menos 1 ms de pre-roll
+     * (nao corta o ataque suave). Arquivo todo em silencio: nao corta. Silencio maior que 500 ms:
+     * nao corta (pausa de proposito; o START do SAMPLE EDIT resolve). Nunca corta o fim; os canais
+     * cortam juntos e o resto e copiado bit a bit. Devolve { b, cut } (cut em amostras; b novo ou o mesmo).
+     */
+    trimLead(b, ctx) {
+      const THR = 0.001, sr = b.sampleRate, n = b.length, nc = b.numberOfChannels;
+      const pre = Math.round(sr * 0.001), max = Math.round(sr * 0.5);
+      let first = n;
+      for (let c = 0; c < nc; c++) {
+        const d = b.getChannelData(c), lim = first;
+        for (let k = 0; k < lim; k++) if (d[k] > THR || d[k] < -THR) { first = k; break; }
+      }
+      if (first >= n) return { b, cut: 0, why: "mudo" };
+      const cut = Math.max(0, first - pre);
+      if (cut === 0) return { b, cut: 0 };
+      if (cut > max) return { b, cut: 0, why: "longo", lead: cut };
+      const s = ctx.createBuffer(nc, n - cut, sr);
+      for (let c = 0; c < nc; c++) s.copyToChannel(b.getChannelData(c).subarray(cut), c);
+      return { b: s, cut };
+    }
+
+    /** Carrega um arquivo de audio no pad i (estereo, ate 2 canais). trim: corta o silencio do comeco (arquivo subido agora). */
+    async loadFile(i, file, trim = true) {
       if (!this.host.on) return;
       const ctx = this.engine.ensure();
       this.flash("Lod", "pad", 4000);
@@ -752,6 +776,14 @@ window.RJ = window.RJ || {};
         s.copyToChannel(b.getChannelData(0), 0); s.copyToChannel(b.getChannelData(1), 1);
         b = s;
       }
+      let note = "";
+      if (trim) {
+        const r = this.trimLead(b, ctx);
+        b = r.b;
+        const ms = x => Math.max(1, Math.round(x * 1000 / b.sampleRate));
+        if (r.cut) note = "Cortei " + ms(r.cut) + " ms de silêncio do começo.";
+        else if (r.why === "longo") note = "Silêncio longo no começo (" + ms(r.lead) + " ms): não cortei; use o START.";
+      }
       const name = String(file.name || "SAMPLE").replace(/\.[^.]+$/, "").slice(0, 40);
       // sample novo: start/end, BPM e Time Modify voltam ao padrao (Gate/Loop/Reverse ficam)
       Object.assign(this.st.pads[i], { start: 0, end: null, beats: null, time: null });
@@ -761,13 +793,15 @@ window.RJ = window.RJ || {};
       if (this.smp && this.smp.stage === "ready" && this.smp.pad === i) { this.smp.stage = "arm"; this.smp.pad = -1; }
       this.render();
       this.flash(this.padShow(i), "pad");
+      // a barra de baixo (solo.js, #d4bar-msg) mostra o corte; a face nao muda
+      if (note && this.onLoadNote) this.onLoadNote(note);
     }
 
-    /** Recebe um WAV de outro aparelho (host.send("dcx404", wav)): vai para o primeiro pad vazio. */
+    /** Recebe um WAV de outro aparelho (host.send("dcx404", wav)): vai para o primeiro pad vazio. Nao corta silencio (o tempo e de quem mandou). */
     receive(file) {
       const i = this.emptyPad();
       if (i < 0) { this.flash("FUL"); return "full"; }
-      this.loadFile(i, file);
+      this.loadFile(i, file, false);
       return "ok";
     }
 
@@ -806,6 +840,10 @@ window.RJ = window.RJ || {};
     /** i: o pad da tela (0 a pads - 1), no banco atual. */
     padDown(i, vel = 1) {
       if (!this.on) return;
+      // o celular suspende o audio (tela bloqueada, ligacao, outro app; no iPhone "interrupted"):
+      // o pad religa na hora, senao ficava mudo ate recarregar
+      const c = this.g && this.g.ctx;
+      if (c && c.state !== "running" && c.state !== "closed") c.resume().catch(() => {});
       const t = i;
       i = this.slotOf(t);
       this.downSlot[t] = i;
