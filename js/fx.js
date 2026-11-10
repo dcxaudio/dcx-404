@@ -168,17 +168,24 @@ window.RJ = window.RJ || {};
      mode 1, Onda 1.6 ("radio antigo"): antes da reducao, a faixa de um radio: passa-altas em 300 Hz e passa-baixas
      em 3 kHz (2 polos cada, quedas suaves de 12 dB/oit.), um grao bem baixo que segue o sinal (-34 dB do envelope:
      no silencio, silencio) e uma saturacao leve (tanh). Tudo antes do passa-baixa anti-espelho: o que a saturacao
-     cria acima da taxa nova tambem nao dobra. rAt, bit e o FLt (fora do worklet) continuam em volta. */
+     cria acima da taxa nova tambem nao dobra. rAt, bit e o FLt (fora do worklet) continuam em volta.
+     Variantes do MFX 14 (face nova, para escolher ouvindo; "LF.A/LF.b/LF.C"): mode 1 = C (o "radio antigo" acima, igual),
+     mode 2 = A "SP-1200 12 bits", mode 3 = B "SP-404 8 bits aspero". A e B seguem a receita aberta da Pesquisa
+     (sp404-lofi-melhor-forma.md, sec. 2 e 4), codigo proprio: saturacao tanh(d.x)/tanh(d) ANTES do crush, pre-filtro
+     (A: passa-baixa de 2 polos, Q 0,707, em 0,42 x a taxa nova: escurece o espelho sem tirar todo; B: nenhum), tomada
+     no instante exato como no C, quantizacao sem dither. B tem tremor de relogio de ~1,5 % do periodo (ruido filtrado);
+     A nao. Sem ruido somado: silencio sai silencio. O pos-filtro (FLt, 12 dB/oit.) fica fora do worklet. */
   class D4Crush extends AudioWorkletProcessor {
     static get parameterDescriptors() { return [
       { name: "bits", defaultValue: 8, minValue: 1, maxValue: 16, automationRate: "k-rate" },
       { name: "down", defaultValue: 4, minValue: 1, maxValue: 64, automationRate: "k-rate" },
-      { name: "mode", defaultValue: 0, minValue: 0, maxValue: 1, automationRate: "k-rate" },
+      { name: "mode", defaultValue: 0, minValue: 0, maxValue: 3, automationRate: "k-rate" },
     ]; }
     constructor() {
       super(); this.h = [0, 0]; this.c = 0; this.t = 0; this.xp = [0, 0];
       this.zd = 0; this.zq = null;                        // mode 1: o "down" dos coeficientes e os coeficientes
-      this.zs = [new Float64Array(28), new Float64Array(28)];   // estados dos 7 biquads (radio 2, antes 4, depois 1) por canal
+      this.zm = 1; this.zj = 0; this.zr = 0x9E3779B9;     // a variante dos coeficientes (1 C, 2 A, 3 B); tremor do B (filtrado) e o sorteio dele
+      this.zs = [new Float64Array(32), new Float64Array(32)];   // estados dos 8 biquads (radio 2, antes 4, depois 1, pre-filtro do A 1) por canal
       this.rq = [D4Crush.bh(300, Math.SQRT1_2), D4Crush.bq(3000, 0.8)];   // mode 1: a faixa do radio (passa-altas, passa-baixas)
       this.env = [0, 0]; this.rs = 0x2545F491;                            // mode 1: envelope do grao e o sorteio dele
     }
@@ -198,9 +205,49 @@ window.RJ = window.RJ || {};
       z[o + 1] = z[o]; z[o] = x; z[o + 3] = z[o + 2]; z[o + 2] = y;
       return y;
     }
+    /* Variantes A (md 2) e B (md 3) do MFX 14. Ordem: saturacao, pre-filtro (so A), tomada no instante exato
+       (com o tremor no B), quantizacao, ganho de saida (iguala o RMS de um mix ao do C, +-0,5 dB). */
+    ab(inp, out, n, steps, down, md) {
+      const B = md === 3, dn = Math.max(1, down), R = D4Crush.run;
+      if (md !== this.zm) { this.zm = md; this.zd = 0; this.zj = 0; this.zs[0].fill(0); this.zs[1].fill(0); }
+      if (down !== this.zd) { this.zd = down; this.zq = [D4Crush.bq(0.42 * sampleRate / dn, Math.SQRT1_2)]; }
+      const pre = this.zq[0], d = B ? 2 : 1.5, gs = 1 / Math.tanh(d), g = B ? 0.54 : 0.65;
+      for (let k = 0; k < n; k++) {
+        this.t -= 1;
+        const take = this.t <= 0, u = take ? Math.min(1, -this.t) : 0;
+        if (take) {
+          let iv = dn;
+          if (B) {   // tremor de relogio: ruido sorteado a cada tomada, filtrado (1 polo), ~1,5 % RMS do periodo
+            this.zr = (this.zr * 1664525 + 1013904223) >>> 0;
+            this.zj += (this.zr / 2147483648 - 1 - this.zj) * 0.3;
+            iv *= 1 + 0.06 * this.zj;
+          }
+          this.t += iv;
+        }
+        for (let c = 0; c < out.length; c++) {
+          let x = (inp[c] || inp[0] || [])[k] || 0;
+          if (!(x > -4 && x < 4)) x = 0;
+          const j = c & 1, old = this.h[j], z = this.zs[j];
+          x = gs * Math.tanh(d * x);
+          if (!B) x = R(pre, z, 28, x);
+          let y = old;
+          if (take) {
+            const v = x + (this.xp[j] - x) * u;
+            this.h[j] = Math.round(v * steps) / steps;
+            y = old * (1 - u) + this.h[j] * u;
+          }
+          out[c][k] = y * g;
+          this.xp[j] = x;
+        }
+      }
+      return true;
+    }
     process(inputs, outputs, P) {
       const inp = inputs[0] || [], out = outputs[0], n = out[0].length;
       const steps = Math.pow(2, P.bits[0] - 1), down = P.down[0];
+      const md = P.mode ? Math.round(P.mode[0]) : 0;
+      if (md >= 2) return this.ab(inp, out, n, steps, down, md);
+      if (md !== this.zm) { this.zm = md; this.zd = 0; this.zs[0].fill(0); this.zs[1].fill(0); }   // voltou do A/B para o C: filtros do zero
       if (P.mode && P.mode[0] >= 0.5) {
         // antes da tomada, um passa-baixa de 4 polos (Butterworth) em 0,45 x a taxa nova: o agudo que nao cabe na taxa
         // nao "dobra" para baixo (era o chiado: um chimbal ganhava +30 a +40 dB abaixo de 3 kHz). Depois, 2 polos em
@@ -874,6 +921,19 @@ window.RJ = window.RJ || {};
   RJ.d4LofiDownNf = lofiDownNf;
   /** 7. Lo-fi / Bit Crush (worklet): bits, taxa de amostragem e tom.
    *  Face nova (MFX 14): relogio uniforme no worklet (mode 1, sem o chiado do tremor de relogio) e a curva lofiDownNf. */
+  /* Variantes do Lo-Fi da face nova (MFX 14), para escolher ouvindo: "C" = o "radio antigo" de sempre (mode 1),
+   * "A" = SP-1200 12 bits (mode 2), "B" = SP-404 8 bits aspero (mode 3). Nos padroes (rAt 0,35, bit 0,55, FLt 0,6)
+   * A fica em 26,04 kHz, 12 bits e FLt 10 kHz; B em 13 kHz, 8 bits e FLt 5,5 kHz (Pesquisa, sp404-lofi-melhor-forma.md
+   * sec. 4). Os tres Ctrl continuam vivos: rAt em escala log com o joelho no padrao, bit em degraus de 1, FLt +-2 oit. */
+  RJ.D4_LOFI_VARS = ["A", "B", "C"];
+  RJ.d4LofiVar = "C";   // a variante do estado (o dcx404 acerta; o visor do bit le daqui)
+  const LOFI_V = {
+    A: { mode: 2, r: [40000, 26040, 4000], b: 16, f: 10000 },
+    B: { mode: 3, r: [30000, 13000, 2000], b: 12, f: 5500 },
+  };
+  const lofiRate = (r, v) => { v = clamp(v, 0, 1); return v <= 0.35 ? r[0] * Math.pow(r[1] / r[0], v / 0.35) : r[1] * Math.pow(r[2] / r[1], (v - 0.35) / 0.65); };
+  const lofiBitsV = (x, v) => { const L = LOFI_V[x]; return L ? Math.round(L.b - clamp(v, 0, 1) * 8 / 1.1) : lofiBits(v); };
+  RJ.d4LofiMap = { rate: (x, v) => lofiRate(LOFI_V[x].r, v), bits: lofiBitsV, tone: (x, v) => LOFI_V[x].f * Math.pow(2, (clamp(v, 0, 1) - 0.6) * 4) };
   function lofi(ctx, env) {
     const nf = !!(env && env.nf);   // face nova: bits inteiros (degraus de 2^bits)
     const input = ctx.createGain(), output = ctx.createGain();
@@ -881,12 +941,33 @@ window.RJ = window.RJ || {};
     const tone = ctx.createBiquadFilter(); tone.type = "lowpass"; tone.Q.value = 0.5;
     input.connect(node).connect(tone).connect(output);
     const P = k => node.parameters.get(k);
+    let vr = "C";   // a variante desta instancia (so a face nova troca)
+    const val = [null, null, null];
+    const set = (i, v) => {
+      val[i] = v;
+      const L = nf && LOFI_V[vr];
+      if (L) {   // A e B: valores em unidades reais
+        if (i === 0) P("bits").setValueAtTime(lofiBitsV(vr, v), ctx.currentTime);
+        if (i === 1) P("down").setTargetAtTime(Math.max(1, ctx.sampleRate / lofiRate(L.r, v)), ctx.currentTime, 0.01);
+        if (i === 2) glide(tone.frequency, Math.min(RJ.d4LofiMap.tone(vr, v), 0.45 * ctx.sampleRate), ctx, 0.01);
+        return;
+      }
+      if (i === 0) { if (nf) P("bits").setValueAtTime(lofiBits(v), ctx.currentTime); else P("bits").setTargetAtTime(16 - v * 13, ctx.currentTime, 0.01); }
+      if (i === 1) P("down").setTargetAtTime(nf ? lofiDownNf(v) : exp(v, 1, 40), ctx.currentTime, 0.01);
+      if (i === 2) glide(tone.frequency, exp(v, 900, 20000), ctx, 0.01);
+    };
     return {
-      input, output,
-      set(i, v) {
-        if (i === 0) { if (nf) P("bits").setValueAtTime(lofiBits(v), ctx.currentTime); else P("bits").setTargetAtTime(16 - v * 13, ctx.currentTime, 0.01); }
-        if (i === 1) P("down").setTargetAtTime(nf ? lofiDownNf(v) : exp(v, 1, 40), ctx.currentTime, 0.01);
-        if (i === 2) glide(tone.frequency, exp(v, 900, 20000), ctx, 0.01);
+      input, output, set,
+      /** Face nova: troca a variante ("A", "B" ou "C") e reenvia os tres Ctrl no mapa dela. C = o de sempre. */
+      variant(x) {
+        if (!nf) return;
+        x = LOFI_V[x] ? x : "C";
+        RJ.d4LofiVar = x;
+        if (x === vr) return;
+        vr = x;
+        P("mode").setValueAtTime(LOFI_V[x] ? LOFI_V[x].mode : 1, ctx.currentTime);
+        tone.Q.setValueAtTime(LOFI_V[x] ? -3.01 : 0.5, ctx.currentTime);   // A/B: pos-filtro Q 0,707 (o Web Audio le o Q do lowpass em dB)
+        val.forEach((v, i) => { if (v != null) set(i, v); });
       },
     };
   }
@@ -1116,7 +1197,7 @@ window.RJ = window.RJ || {};
     { id: "comp", n: 8, m: 12, name: "Compressor", caps: ["Sustain", "Attack", "Level"], codes: ["SuS", "Att", "LEV"], def: [0.5, 0.3, 0.4, 0.46],
       limK: [0, 3, 2], limCodes: ["SuS", "rEL", "LEV"], limCaps: ["Sustain", "Release", "Level"], lim: { 2: 0.5 }, make: compressor, mfx: 3 },
     // Lo-fi: os parametros sao Bits, Rate, Tone (a estavel); na face nova o Ctrl 1 e SAMPLE RATE e o 2 e BIT, como no manual
-    { id: "lofi", n: 7, m: 14, name: "Lo-fi", caps: ["Bits", "Rate", "Tone"], codes: ["rAt", "bit", "FLt"], show: [null, v => String(lofiBits(v)), null], nfK: [1, 0, 2], def: [0.55, 0.35, 0.6], lim: { 0: [0, 0.7] }, make: lofi, mfx: 2, worklet: true },
+    { id: "lofi", n: 7, m: 14, name: "Lo-fi", caps: ["Bits", "Rate", "Tone"], codes: ["rAt", "bit", "FLt"], show: [null, v => String(lofiBitsV(RJ.d4LofiVar, v)), null], nfK: [1, 0, 2], def: [0.55, 0.35, 0.6], lim: { 0: [0, 0.7] }, make: lofi, mfx: 2, worklet: true },
     { id: "djfx", n: 5, m: 24, name: "DJFX Looper", caps: ["Length", "Speed", "Loop"], codes: ["LEn", null, null], show: [null, showSpeed, showSw], def: [0.5, 1, 1], lim: { 0: [1, 0.7] }, make: djfx, worklet: true },
     { id: "stopper", n: 9, m: 25, name: "Stopper", caps: ["Time", "Type", "Trig"], codes: [null, null, null], def: [0.4, 0, 1], make: stopper, mfx: 4, worklet: true },
   ];

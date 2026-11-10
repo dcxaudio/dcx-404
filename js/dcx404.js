@@ -207,6 +207,7 @@ window.RJ = window.RJ || {};
       // face nova (manual p. 19): Effect Limit ([CANCEL] + [MFX], "L.on"/"L.oF", de fabrica desligado) e Send/Return
       // ([CANCEL] + [VINYL SIM], "S.on"/"S.oF", de fabrica ligado). O SP-404 volta a esses dois ao ligar; aqui ficam guardados
       fxLimit: false, sendRet: true,
+      lofiVar: "B",   // face nova: variante do Lo-Fi (MFX 14), "A"/"B"/"C" (padrao B, escolha de Igor); [CANCEL] segurado + CTRL 3 com o Lo-Fi ligado
       pads: new Array(SLOTS).fill(null).map(newPad),
     };
   }
@@ -568,6 +569,7 @@ window.RJ = window.RJ || {};
       fx.def = def;
       if (fx.sendRet) fx.sendRet(this.srOn());
       if (fx.limit) fx.limit(this.limOn());
+      if (fx.variant) fx.variant(this.lofiVar());   // Lo-Fi da face nova: a variante A/B/C do estado
       this.st.params[id].forEach((v, i) => this.fxSet(fx, i, v));
       if (fx.bpm) fx.bpm(this.st.bpm);
       if (fx.keep) { this.slot(b).attach(fx); fx.output.connect(this.g.sink); }
@@ -625,6 +627,7 @@ window.RJ = window.RJ || {};
       if (st.fxPads && !st.fxPads.length) st.fxPads = null;   // lista vazia salva (versao antiga) = current pad
       // estado/disquete sem os campos: Limit desligado e Send/Return ligado (o som de antes)
       st.fxLimit = d.fxLimit === true; st.sendRet = d.sendRet !== false;
+      st.lofiVar = (RJ.D4_LOFI_VARS || []).includes(d.lofiVar) ? d.lofiVar : "B";   // estado/disquete sem o campo: B (o padrao; quem ja escolheu A ou C mantem)
       this.markOp = null; this.remainHeld = null; this.preset = [null, null, null];
       st.lofiBits = clamp(Math.round(+d.lofiBits) || RJ.D4_LOFI.bits, RJ.D4_LOFI.minBits, RJ.D4_LOFI.maxBits);
       st.lofiDown = clamp(Math.round(+d.lofiDown) || RJ.D4_LOFI.down, 1, RJ.D4_LOFI.maxDown);
@@ -1215,6 +1218,7 @@ window.RJ = window.RJ || {};
 
     ctrlGet(k) {
       if (this.smp && k === 2) return this.st.inLevel;   // REC: o CTRL 3 e o nivel da entrada (manual p. 23), mesmo com REMAIN segurado
+      if (k === 2 && this.lofiVarTurn()) return (this.lofiVarRaw != null && this.lofiVarAt(this.lofiVarRaw) === this.lofiVar()) ? this.lofiVarRaw : RJ.D4_LOFI_VARS.indexOf(this.lofiVar()) / 2;
       if (k === 2 && this.mfxChoosing()) {   // [MFX] + CTRL 3: a posicao do numero escolhido (ou do MFX atual)
         const d = RJ.D4FX.byId(this.st.mfx), n = this.mfxSel != null ? this.mfxSel : d && d.m ? d.m : 1;
         // girando: a posicao exata (senao cada passo pequeno arredondava de volta ao mesmo numero e a roda ficava parada)
@@ -1238,6 +1242,8 @@ window.RJ = window.RJ || {};
     ctrlSet(k, v) {
       // REC: o CTRL 3 e o nivel da entrada, mesmo com REMAIN segurado
       if (this.smp && k === 2) { this.st.inLevel = v; this.applyInput(); this.flash(String(Math.round(v * 127)), "pad"); return; }
+      // face nova, Lo-Fi (MFX 14) ligado: [CANCEL] segurado + CTRL 3 escolhe a variante A/B/C (visor "LF.A"/"LF.b"/"LF.C")
+      if (k === 2 && this.lofiVarTurn()) { this.lofiVarSet(v); return; }
       // face nova: segurar [MFX] e girar o CTRL 3 escolhe o MFX 1-24 (manual p. 18); vale tambem na janela de 5 s (mouse)
       if (k === 2 && this.mfxChoosing()) { this.mfxKnob(v); return; }
       // REMAIN segurado + Ctrl: preselecao para o proximo efeito (visor "C-1".."C-3", manual p. 19); o efeito ligado nao muda
@@ -1315,6 +1321,7 @@ window.RJ = window.RJ || {};
       [1, 2].forEach(b => Object.values((this.fxi && this.fxi[b]) || {}).forEach(fx => {
         if (fx.sendRet) fx.sendRet(this.srOn());
         if (fx.limit) fx.limit(this.limOn());
+        if (fx.variant) fx.variant(this.lofiVar());
         const p = fx.def && this.st.params[fx.def.id];
         if (p) p.forEach((v, i) => this.fxSet(fx, i, v));
       }));
@@ -1329,6 +1336,28 @@ window.RJ = window.RJ || {};
       this.flash(name === "mfx" ? (this.st.fxLimit ? "L.on" : "L.oF") : (this.st.sendRet ? "S.on" : "S.oF"), "fx", 1500);
       this.renderCaps();
       this.dirty();
+    }
+    /** Variante do Lo-Fi (face nova): "A", "B" (o padrao) ou "C". */
+    lofiVar() { return this.nf ? ((RJ.D4_LOFI_VARS || []).includes(this.st.lofiVar) ? this.st.lofiVar : "B") : "C"; }   // a estavel fica sempre no C (o Lo-Fi de antes)
+    /** [CANCEL] segurado com o Lo-Fi (MFX 14) no bus, na face nova: o CTRL 3 escolhe a variante. */
+    lofiVarTurn() {
+      if (!this.nf || !this.cancelHeld || this.setup || this.remainHeld || this.sed || this.smp || this.lofiPage() || this.mfxHeld()) return false;   // CANCEL + MFX segurados: o Ctrl 3 segue escolhendo o MFX
+      const f = this.curFx(); return !!(f && f.id === "lofi" && RJ.D4_LOFI_VARS);
+    }
+    /** Posicao do CTRL 3 (0-1) -> variante: terco da esquerda A, do meio B, da direita C. */
+    lofiVarAt(v) { return RJ.D4_LOFI_VARS[Math.min(2, Math.floor(clamp(v, 0, 1) * 3))]; }
+    lofiVarSet(v) {
+      this.cancelHeld.used = true;   // soltar o CANCEL nao desiste de nada
+      this.lofiVarRaw = v;
+      const x = this.lofiVarAt(v), show = "LF." + (x === "B" ? "b" : x);
+      if (x !== this.st.lofiVar) { this.st.lofiVar = x; this.applyLofiVar(); this.dirty(); }
+      this.codeFx = null;   // o proximo giro normal mostra o codigo (rAt/bit/FLt) de novo
+      this.flash(show, "fx", 1500);
+    }
+    /** Manda a variante a todas as instancias do Lo-Fi ja criadas (e ao visor do bit). */
+    applyLofiVar() {
+      RJ.d4LofiVar = this.lofiVar();
+      [1, 2].forEach(b => { const fx = this.fxi && this.fxi[b] && this.fxi[b].lofi; if (fx && fx.variant) fx.variant(this.lofiVar()); });
     }
     /** [MFX] segurado ou a janela de 5 s aberta (face nova): o CTRL 3 escolhe o numero. */
     mfxChoosing() {
