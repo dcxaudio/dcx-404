@@ -129,9 +129,9 @@
     const on = () => { host.power(); power.classList.add("off"); };
     document.getElementById("power-btn").addEventListener("click", on);
 
-    // Abrir: o disquete do 404 (dcx-404.json) ou o projeto .zip do Studio, pelo botao na barra
-    // de cima ou arrastando o arquivo para a pagina (novo/js/abrir.js converte 16 pads -> A1-A12, B1-B4)
-    const bar = document.getElementById("learnbar");
+    // Abrir: o disquete do 404 (dcx-404.json) ou o projeto .zip do Studio, pela secao Disquete do painel
+    // Config ou arrastando o arquivo para a pagina (novo/js/abrir.js converte 16 pads -> A1-A12, B1-B4)
+    const bar = document.getElementById("d4cfg-disk");
     const openBtn = document.createElement("button");
     openBtn.type = "button"; openBtn.className = "d4-open-btn"; openBtn.textContent = "Abrir disquete/projeto";
     openBtn.title = "Abre o disquete do DCX 404 (dcx-404.json) ou o projeto .zip do DCX Studio. Tambem da para arrastar o arquivo para a pagina.";
@@ -239,6 +239,85 @@
     }
     saveBtn.addEventListener("click", () => saveFile());
     RJ.d4SaveFile = saveFile;   // para o QA (e o console): RJ.d4SaveFile({ noDownload: true }) -> { blob, name }
+
+    // Barra de baixo (no estilo da do DCX Studio): logo do 404 e "Subir sample", para o toque/celular,
+    // onde nao ha Shift nem arrastar. Tocar o botao: os 12 pads piscam e a barra pede "Toque no pad";
+    // o pad tocado abre o seletor (#d4-file) e carrega nele pelo mesmo caminho do Shift + pad
+    // (d404.pickFile). Tocar fora, o botao de novo, CANCEL ou Esc desistem. Nao muda som nem a face.
+    const upBtn = document.getElementById("d4-up"), upMsg = document.getElementById("d4bar-msg");
+    let upPick = false, upEatCancel = false, upTimer = 0;
+    const upSay = (t, ms) => { clearTimeout(upTimer); upMsg.textContent = t || ""; if (t && ms) upTimer = setTimeout(() => { upMsg.textContent = ""; }, ms); };
+    function upSet(v, msg, ms) {
+      upPick = !!v;
+      upBtn.classList.toggle("on", upPick);
+      upBtn.setAttribute("aria-pressed", String(upPick));
+      upSay(msg, ms);
+      d404.renderPads();
+    }
+    const renderPads0 = d404.renderPads.bind(d404);
+    d404.renderPads = function () {
+      renderPads0();
+      if (upPick && d404.padEls) d404.padEls.forEach(el => el.classList.add("hit", "blink"));   // o mesmo piscar do REC/DEL
+    };
+    const padDown0 = d404.padDown.bind(d404);
+    d404.padDown = function (t, vel) {
+      if (!upPick || !d404.on) return padDown0(t, vel);
+      const i = d404.slotOf(t);
+      d404.downSlot[t] = i; d404.held.add(i);   // o padUp do mesmo toque solta normalmente
+      upSet(false, "Pad " + d404.padLabel(i) + ": escolha o arquivo", 15000);
+      d404.pickFile(i);
+    };
+    const cancel0 = d404.cancelPress.bind(d404);
+    d404.cancelPress = function () {
+      if (upEatCancel) { upEatCancel = false; return; }   // o CANCEL que desistiu do "Subir sample" nao faz mais nada
+      if (upPick) { upSet(false, "Nada mudou.", 3000); return; }
+      return cancel0();
+    };
+    upBtn.addEventListener("click", () => {
+      if (upPick) { upSet(false, "Nada mudou.", 3000); return; }
+      if (!host.on) on();
+      upSet(true, "Toque no pad");
+    });
+    // tocar fora dos pads desiste (o toque segue valendo para o que foi tocado, menos o CANCEL)
+    document.addEventListener("pointerdown", e => {
+      if (!upPick || upBtn.contains(e.target)) return;
+      if (d404.padEls.some(el => el.contains(e.target))) return;
+      if (e.target.closest && e.target.closest('[data-ctrl="cancel"]')) {
+        upEatCancel = true;
+        window.addEventListener("pointerup", () => setTimeout(() => { upEatCancel = false; }, 0), { once: true });
+      }
+      upSet(false, "Nada mudou.", 3000);
+    }, true);
+    window.addEventListener("keydown", e => { if (upPick && e.code === "Escape") upSet(false, "Nada mudou.", 3000); });
+    d404.el.file.addEventListener("change", () => { if (/escolha o arquivo/.test(upMsg.textContent)) upSay("", 0); });
+
+    // Painel Config (como o do DCX Studio, js/bar.js #cfg): o que nao e da maquina (MIDI Learn, Teclas,
+    // disquete, ajuda, creditos). O botao da barra abre e fecha; Esc e tocar fora fecham.
+    // Durante o Learn o painel fecha e a barra do Learn (#learnbar, a mesma, com os mesmos handlers)
+    // vai para a barra de baixo, para tocar nos controles da face; ao sair do Learn ela volta ao painel.
+    const cfgEl = document.getElementById("d4cfg"), cfgBtn = document.getElementById("d4cfg-btn");
+    const d4bar = document.getElementById("d4bar"), lb = document.getElementById("learnbar");
+    const lbHome = lb.parentNode, lbNext = lb.nextSibling;
+    const cfgOpen = () => !cfgEl.hidden;
+    function panel(open, refocus) {
+      cfgEl.hidden = !open;
+      cfgBtn.setAttribute("aria-expanded", String(open));
+      if (open) cfgEl.focus({ preventScroll: true });
+      else if (refocus) cfgBtn.focus({ preventScroll: true });
+    }
+    cfgBtn.addEventListener("click", () => panel(!cfgOpen()));
+    document.addEventListener("keydown", e => { if (e.key === "Escape" && cfgOpen()) { e.preventDefault(); panel(false, true); } });
+    document.addEventListener("pointerdown", e => {
+      if (cfgOpen() && !cfgEl.contains(e.target) && !cfgBtn.contains(e.target)) panel(false);
+    }, true);
+    const placeLearn = () => {
+      const on = document.body.classList.contains("learning");
+      if (on) { if (cfgOpen()) panel(false); if (lb.parentNode !== d4bar) d4bar.insertBefore(lb, cfgBtn); }
+      else if (lb.parentNode !== lbHome) lbHome.insertBefore(lb, lbNext);
+      cfgBtn.disabled = on;
+    };
+    new MutationObserver(placeLearn).observe(document.body, { attributes: true, attributeFilter: ["class"] });
+    placeLearn();
 
     // teclado
     const held = new Set();

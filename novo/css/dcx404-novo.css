@@ -183,9 +183,13 @@ body.learning .dx [data-learn] { outline: 1px dashed rgba(75, 138, 208, .8); out
 .dx-scroll { display: flex; justify-content: center; }
 .dx-fit { flex: none; }
 
-/* ---------------------------------------------------------------- Abrir disquete/projeto (barra de cima, fora do painel) */
+/* ---------------------------------------------------------------- Abrir/Salvar disquete (secao Disquete do painel Config) */
 .learnbar { flex-wrap: wrap; }
 .learnbar .d4-open-btn { cursor: pointer; }
+/* a barra de cima so tem o titulo: a mesma altura de antes no computador (a face nao sai do lugar) */
+.dx-page .solo-top { min-height: 30px; }
+/* o titulo repetia o logo da barra de baixo: some da tela, fica para leitor de tela */
+.dx-page .solo-title { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .d4-open-msg { font-size: 12px; line-height: 1.35; color: var(--page-ink); max-width: 46ch; }
 .d4-open-msg.err { color: #e0675a; }
 @media (prefers-color-scheme: light) { .d4-open-msg.err { color: #b3261e; } }
@@ -214,3 +218,84 @@ body.learning .dx [data-learn] { outline: 1px dashed rgba(75, 138, 208, .8); out
 .dx-fk .dx-keycap { right: 6px; top: 4px; }
 .dx-tap .dx-keycap { right: 6px; top: 6px; }
 .learnbar .d4-keys-btn.on { box-shadow: inset 0 0 0 1px rgba(75, 138, 208, .8); }
+
+/* ---------------------------------------------------------------- barra de baixo (estilo da do DCX Studio) e "Subir sample" */
+:root { --d4bar: #1b1c1d; --d4bar-ink: #d8dad5; --d4bar-dim: #8d8f8a; --d4bar-line: #34363a; --d4bar-shadow: rgba(0,0,0,.5); --d4bar-h: 48px; }
+@media (prefers-color-scheme: light) {
+  :root { --d4bar: #e9e8e2; --d4bar-ink: #1c1c1c; --d4bar-dim: #6c6d68; --d4bar-line: #c4c3bb; --d4bar-shadow: rgba(0,0,0,.18); }
+}
+body { padding-bottom: calc(var(--d4bar-h) + 8px + env(safe-area-inset-bottom)); }
+.d4bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 41; height: var(--d4bar-h); box-sizing: content-box;
+  padding: 0 max(16px, env(safe-area-inset-right)) env(safe-area-inset-bottom) max(16px, env(safe-area-inset-left));
+  background: var(--d4bar); color: var(--d4bar-ink); border-top: 1px solid var(--d4bar-line); box-shadow: 0 -6px 18px var(--d4bar-shadow);
+  display: flex; align-items: center; gap: 18px; font-family: var(--font); }
+.d4bar * { box-sizing: border-box; }
+/* o logo SVG do 404 na cor da barra (mascara: o desenho original e grafite) */
+.d4bar-logo { flex: none; display: block; height: 16px; aspect-ratio: 239.101 / 30.9111; background: currentColor;
+  -webkit-mask: url(../assets/svg/logo-dcx404.svg) center / contain no-repeat; mask: url(../assets/svg/logo-dcx404.svg) center / contain no-repeat; }
+.d4bar-sep { flex: none; width: 1px; height: 22px; background: var(--d4bar-line); }
+.d4bar-msg { flex: 1; min-width: 0; font-size: 13px; letter-spacing: .04em; color: var(--d4bar-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.d4bar-btn { flex: none; height: 36px; padding: 0 14px; border-radius: 4px; border: 1px solid var(--d4bar-line); background: transparent; color: var(--d4bar-ink);
+  font: 600 13px var(--font); letter-spacing: .1em; text-transform: uppercase; cursor: pointer; touch-action: manipulation; }
+.d4bar-btn:hover { border-color: var(--d4bar-ink); }
+.d4bar-btn:focus-visible { outline: 2px solid var(--rule); outline-offset: 2px; }
+.d4bar-btn.on { background: var(--key-red); border-color: var(--key-red); color: #fff; }
+.d4bar-btn.on + .d4bar-msg, .d4bar-msg:has(+ .d4bar-btn.on) { color: var(--d4bar-ink); }
+@media (max-width: 640px) {
+  .d4bar { gap: 12px; padding-left: max(12px, env(safe-area-inset-left)); padding-right: max(12px, env(safe-area-inset-right)); }
+  .d4bar-logo { height: 12px; }
+  .d4bar-btn { padding: 0 10px; font-size: 12px; letter-spacing: .08em; }
+}
+
+/* ---------------------------------------------------------------- Config (botao e painel como os do DCX Studio, css/bar.css .cfg-btn/.cfg) */
+:root { --d4panel: #232426; --d4field: #2c2d30; }
+@media (prefers-color-scheme: light) { :root { --d4panel: #f4f3ee; --d4field: #e6e5de; } }
+.d4bar-cfg { width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--d4bar-line); background: transparent; display: grid; place-items: center;
+  flex: none; color: var(--d4bar-ink); padding: 0; cursor: pointer; touch-action: manipulation; }
+.d4bar-cfg svg { width: 18px; height: 18px; }
+.d4bar-cfg:hover { border-color: var(--d4bar-ink); }
+.d4bar-cfg:focus-visible { outline: 2px solid var(--rule); outline-offset: 2px; }
+.d4bar-cfg[aria-expanded="true"] { background: var(--d4bar-ink); color: var(--d4bar); border-color: var(--d4bar-ink); }
+.d4bar-cfg:disabled { opacity: .4; cursor: default; }
+.d4cfg { position: fixed; right: 12px; bottom: calc(var(--d4bar-h) + 12px + env(safe-area-inset-bottom)); z-index: 42; width: 440px; max-width: calc(100vw - 24px);
+  max-height: calc(100vh - var(--d4bar-h) - 36px); max-height: calc(100dvh - var(--d4bar-h) - 36px - env(safe-area-inset-bottom)); overflow: auto; overscroll-behavior: contain;
+  background: var(--d4panel); color: var(--d4bar-ink); border: 1px solid var(--d4bar-line); border-radius: 10px;
+  box-shadow: 0 18px 40px var(--d4bar-shadow); padding: 4px 18px 18px; font-family: var(--font); box-sizing: border-box; }
+.d4cfg[hidden] { display: none; }
+.d4cfg:focus { outline: none; }
+.d4cfg * { box-sizing: border-box; }
+.d4cfg section { padding-top: 14px; }
+.d4cfg section + section { border-top: 1px solid var(--d4bar-line); margin-top: 16px; }
+.d4cfg h2 { margin: 0 0 10px; font-size: 11px; font-weight: 700; letter-spacing: .22em; text-transform: uppercase; display: flex; align-items: center; gap: 8px; }
+.d4cfg h2::before { content: ""; flex: none; width: 14px; height: 2px; background: var(--key-red); }
+.d4cfg h2 em { margin-left: auto; font-style: normal; font-weight: 400; letter-spacing: .04em; text-transform: none; font-size: 11px; color: var(--d4bar-dim); text-align: right; }
+.d4cfg a { color: inherit; }
+.d4cfg-foot { margin: 10px 0 0; font-size: 11px; color: var(--d4bar-dim); line-height: 1.4; }
+.d4cfg-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.d4cfg .learnbar { color: var(--d4bar-ink); gap: 8px; }
+.d4cfg button.learnbar-btn, .d4cfg button.learnbar-save, .d4cfg .d4-open-btn, .d4bar .learnbar button {
+  height: 32px; padding: 0 12px; border-radius: 4px; border: 1px solid var(--d4bar-line); background: transparent; color: var(--d4bar-ink);
+  font: 600 12px var(--font); letter-spacing: .08em; text-transform: uppercase; cursor: pointer; touch-action: manipulation; box-shadow: none; }
+.d4cfg .learnbar button:hover, .d4cfg .d4-open-btn:hover, .d4bar .learnbar button:hover { border-color: var(--d4bar-ink); }
+.d4cfg .learnbar-btn.on, .d4bar .learnbar-btn.on { background: var(--rule); border-color: var(--rule); color: #fff; box-shadow: 0 0 10px 1px rgba(75, 138, 208, .6); }
+.d4cfg .learnbar .d4-keys-btn.on { background: var(--d4bar-ink); color: var(--d4bar); border-color: var(--d4bar-ink); box-shadow: none; }
+.d4cfg .learnbar-text { order: 9; width: 100%; font-size: 16px; color: var(--d4bar-ink); }
+.d4cfg .learnbar-text:empty { display: none; }
+.d4cfg .d4-open-msg { width: 100%; color: var(--d4bar-dim); max-width: none; }
+.d4cfg-scroll { max-height: 40vh; overflow: auto; overscroll-behavior: contain; padding-right: 4px; }
+.d4cfg-help { margin: 0 0 10px; font-size: 12px; line-height: 1.5; color: var(--d4bar-ink); }
+.d4cfg-help kbd { font-family: inherit; border: 1px solid currentColor; border-radius: 3px; padding: 0 4px; }
+.d4cfg-credit { margin: 0; font-size: 12px; line-height: 1.5; color: var(--d4bar-dim); }
+/* Learn ativo: a barra do Learn vem para a barra de baixo (o aviso fica a vista enquanto se toca a face) */
+.d4bar .learnbar { flex: 1; min-width: 0; flex-wrap: nowrap; gap: 8px; min-height: 0; color: var(--d4bar-ink); }
+.d4bar .learnbar button { flex: none; height: 32px; }
+.d4bar .learnbar .d4-keys-btn { display: none; }
+.d4bar .learnbar-text { flex: 1; min-width: 0; font-size: 14px; color: var(--d4bar-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+body.learning .d4bar-msg, body.learning #d4-up { display: none; }
+@media (max-width: 640px) {
+  .d4cfg { right: 8px; left: 8px; width: auto; max-width: none; padding: 4px 14px 14px; }
+  .d4cfg-scroll { max-height: none; overflow: visible; }
+  body.learning .d4bar-sep, body.learning .d4bar-logo { display: none; }
+  .d4bar .learnbar button { padding: 0 8px; font-size: 11px; }
+  .d4bar .learnbar-text { font-size: 12px; }
+}
