@@ -54,7 +54,7 @@
   const K = RJ.d4Keys = {
     ready: false,
     map: {},            // "KeyM" -> { t: "fx-mfx", d: 0 }   (knob: d 1 sobe, -1 desce)
-    show: true,         // mostrar as teclas nos controles
+    show: false,        // mostrar as teclas nos controles (padrao: face limpa; o botao "Teclas" liga)
     cand: null,         // no Learn: ["KeyU"] ou ["KeyU", "KeyJ"]
     note: null,         // aviso na barra (tecla fixa, tecla com dono, knob com uma tecla so)
     confirm: null,      // o Enter que ja avisou (o proximo troca)
@@ -105,11 +105,13 @@
             if (/^[A-Za-z0-9]+$/.test(c) && !RESERVED.has(c) && b && typeof b.t === "string" && [-1, 0, 1].includes(b.d)) this.map[c] = { t: b.t, d: b.d };
           });
         }
-        if (d && typeof d.show === "boolean") this.show = d.show;
+        // v1 gravava show: true por padrao (nao era escolha): uma vez, volta escondido; o map aprendido fica
+        if (d && d.v === 2 && typeof d.show === "boolean") this.show = d.show;
+        else if (d) { this.show = false; this.persist(); }
       } catch (e) { console.warn("Mapa de teclado ilegivel, comecando com o padrao", e); }
     },
     persist() {
-      try { this.L.store.put(STORE_KEY, JSON.stringify({ v: 1, show: this.show, map: this.map })); } catch (e) { console.warn(e); }
+      try { this.L.store.put(STORE_KEY, JSON.stringify({ v: 2, show: this.show, map: this.map })); } catch (e) { console.warn(e); }
     },
 
     /* ------------------------------------------------ Learn */
@@ -250,6 +252,11 @@
       this.L.targets.forEach(t => {
         const keys = this.keysOf(t.id);
         let cap = t.el.querySelector(":scope > .dx-keycap");
+        // dica ao passar o mouse (title), sem apagar um title que o controle ja tenha
+        if (!t.el.hasAttribute("title") || t.el.dataset.keyTitle) {
+          if (keys.length) { t.el.title = this.short(t.id) + " · tecla " + keys.map(c => this.label(c)).join(isValue(t) ? " / " : " "); t.el.dataset.keyTitle = "1"; }
+          else if (t.el.dataset.keyTitle) { t.el.removeAttribute("title"); delete t.el.dataset.keyTitle; }
+        }
         if (!keys.length) { if (cap) cap.remove(); return; }
         if (!cap) { cap = document.createElement("span"); cap.className = "dx-keycap"; cap.setAttribute("aria-hidden", "true"); t.el.appendChild(cap); }
         cap.textContent = keys.map(c => this.label(c)).join(isValue(t) ? "/" : " ");
@@ -270,7 +277,7 @@
       const st = document.createElement("style");
       st.id = "d4-keycap-css";
       st.textContent = ".dx-keycap{display:none;position:absolute;z-index:4;right:1px;top:1px;padding:0 2px;border-radius:2px;background:#f1f2e8;color:#262a40;" +
-        "font:700 8px/9px sans-serif;white-space:nowrap;pointer-events:none}.dx.keys-on .dx-keycap{display:block}" +
+        "font:700 8px/9px sans-serif;white-space:nowrap;pointer-events:none}.dx.keys-on .dx-keycap,.dx.keys-peek .dx-keycap,body.learning .dx .dx-keycap{display:block}" +
         ".dx-knob .dx-keycap{right:auto;left:97px;top:37px;padding:0 3px;font-size:9px;line-height:13px;box-shadow:0 0 0 1px rgba(0,0,0,.55)}" +
         ".dx-fk .dx-keycap{right:6px;top:4px}.dx-tap .dx-keycap{right:6px;top:6px}";
       document.head.appendChild(st);
@@ -322,6 +329,13 @@
   }
 
   // na captura e antes da barra do core (que registra o dela no DOMContentLoaded)
+  // Alt/Option segurado: mostra as legendas so enquanto segura (nada e preso: o atalho do navegador segue)
+  const peek = on => { if (K.root) K.root.classList.toggle("keys-peek", on); };
+  window.addEventListener("keydown", e => { if (e.key === "Alt" && !e.repeat) peek(true); }, true);
+  window.addEventListener("keyup", e => { if (e.key === "Alt" || !e.altKey) peek(false); }, true);
+  window.addEventListener("blur", () => peek(false));
+  document.addEventListener("visibilitychange", () => peek(false));
+  window.addEventListener("pointerdown", e => { if (!e.altKey) peek(false); }, true);
   window.addEventListener("keydown", e => {
     if (!K.ready) return;
     if (K.L.learning) K.learnKey(e); else K.down(e);
