@@ -1695,6 +1695,7 @@ window.RJ = window.RJ || {};
      *  voltam ao de antes), DEL, SAMPLE EDIT e, por fim, a preselecao guardada. Visor "---". Nao para o REC gravando
      *  nem o Resample, e nao mexe no sequenciador (o "PATTERN STOP" do painel e da Fase 4). */
     cancelPress() {
+      if (this.seqHook && this.seqHook.tap && this.seqHook.tap()) return;   // face nova: CANCEL 4x rapido silencia tudo (p. 8)
       if (this.seqHook && this.seqHook.cancel(false)) return;   // gravando/esperando pattern: CANCEL para e salva (p. 35)
       if (this.smp && this.smp.stage !== "rec") this.cancelSmp();
       else if (this.markOp) this.cancelMark();

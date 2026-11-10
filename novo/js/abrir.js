@@ -12,6 +12,9 @@
  * A conversao e a mesma da migracao automatica (solo.js): o pad guardado i do 404 estavel
  * vai para o pad guardado i da face nova, entao 1-12 viram A1-A12 e 13-16 viram B1-B4;
  * o estado (efeitos, volume, nomes, modos, nivel dos pads) passa pelo useState do motor.
+ * Patterns (st.seq, B3): vao no estado com "pads": 12 (os pads por banco); no abrir passam pelo RJ.D4Seq.load
+ * (limpa, remapeia outra divisao de pads, recusa outra versao). Disquete sem patterns: a memoria de patterns fica
+ * vazia (o Load do OG substitui samples e patterns, p. 40). seqMsg(r) = o aviso do que ficou de fora.
  * So escreve no armazenamento da propria pagina ("dcx404-novo/"); a estavel nao muda.
  */
 (function () {
@@ -127,6 +130,12 @@
     const S = RJ.D404.SLOTS, P = RJ.D404.PADS;
     const st = Object.assign({}, data.state);
     if (st.format === undefined) st.format = "dcx404";   // estado antigo sem o campo: o disquete ja diz que e do 404
+    // patterns: o do disquete (limpo/remapeado) ou nenhum; sem o js/sequencer.js o campo passa como veio
+    let seq = null;
+    if (RJ.D4Seq) {
+      const had = !!(d404.st.seq && d404.st.seq.pats && Object.keys(d404.st.seq.pats).length);
+      seq = RJ.D4Seq.load(data.state.seq, S, RJ.D404.BANKS, P); seq.had = had; st.seq = seq.seq;
+    }
     d404.stopAll();
     d404.abortRecs();   // REC em espera/gravando (ou Resample): cancela antes, a gravacao nao cai no disquete novo
     if (d404.delMode) d404.delMode = null;
@@ -151,7 +160,22 @@
     }
     const extra = Array.isArray(data.pads) ? data.pads.slice(S).filter(Boolean).length : 0;
     d404.applyAll(); d404.render(); d404.saveNow();
-    return { pads, banks: [...banks], bad, extra };
+    const pats = seq ? Object.keys(d404.st.seq && d404.st.seq.pats || {}).length : 0;
+    return { pads, banks: [...banks], bad, extra, pats, seq };
+  }
+
+  /** O aviso dos patterns do apply (vazio se nao ha o que dizer alem do numero). */
+  function seqMsg(r) {
+    const q = r && r.seq;
+    if (!q) return "";
+    const n = r.pats ? " " + r.pats + (r.pats === 1 ? " pattern." : " patterns.") : "";
+    const per = q.per || 12, nb = RJ.D404.BANKS, bl = "ABCDE".slice(0, nb);
+    const lost = (q.pats ? q.pats + " pattern(s)" : "") + (q.pats && q.notes ? " e " : "") + (q.notes ? q.notes + " nota(s)" : "");
+    if (q.why === "none") return q.had ? " Esse disquete nao tem patterns: a memoria de patterns ficou vazia." : "";
+    if (q.why === "ver") return " Os patterns desse disquete" + (q.pats ? " (" + q.pats + ")" : "") + " sao de outra versao do 404 e nao foram abertos (a memoria de patterns ficou vazia).";
+    if (q.why === "bad") return " Os patterns desse disquete estao ilegiveis e nao foram abertos (a memoria de patterns ficou vazia).";
+    if (q.why === "p16") return n + " Os patterns vieram de um 404 com " + per + " pads por banco: entraram os pads 1-" + Math.min(per, RJ.D404.PADS) + " dos bancos " + bl[0] + "-" + bl[nb - 1] + (lost ? "; " + lost + " ficaram de fora." : ".");
+    return n + (lost ? " " + lost + " de pattern ficaram de fora (fora da faixa ou alem das 8000 notas)." : "");
   }
 
   /* ================================================================ salvar (o inverso do apply) */
@@ -187,6 +211,7 @@
     const o = opts || {};
     const S = RJ.D404.SLOTS, P = RJ.D404.PADS;
     const state = JSON.parse(d404.serialize());
+    if (state.seq && typeof state.seq === "object") state.seq.pads = P;   // patterns: quantos pads por banco (o abrir remapeia outro)
     const head = { format: "dcx-disk", version: 1, machine: "dcx404", name: LABEL.dcx404,
       project: o.project || "DCX 404 (face nova)", saved: new Date().toISOString(),
       layout: { pads: P, banks: RJ.D404.BANKS } };
@@ -208,5 +233,5 @@
     return { blob, name: o.name || fileName(), pads, banks: [...banks], bytes: blob.size };
   }
 
-  RJ.d4Open = { parse, apply, unwrap, readZip, build, fileName };
+  RJ.d4Open = { parse, apply, unwrap, readZip, build, fileName, seqMsg };
 })();

@@ -1,4 +1,4 @@
-/* DCX 404 - Pattern Sequencer (face nova, Fase 4 / B1-B2)
+/* DCX 404 - Pattern Sequencer (face nova, Fase 4 / B1-B3)
  *
  * O sequenciador do SP-404 OG (manual p. 34-37): um pattern e uma performance de pads gravada em tempo real,
  * presa a um pad de um banco de patterns (aqui 5 bancos A-E x 12 pads = 60 patterns, como os pads da face nova;
@@ -7,6 +7,8 @@
  * contagem de 1 compasso antes de gravar, gravacao em loop com overdub, rehearsal ("rEH").
  * B2 (p. 36-37): apagar notas gravando ("ErS": segurar o pad ou o HOLD), apagar patterns ("dEL"), apagar a memoria
  * ("dAL") e trocar dois patterns de pad ("CHG"), com "EMP", "Prt" (banco protegido) e "FuL".
+ * B3: troca reservada (um so reservado, o ultimo pad vale; sem lista/song, p. 13 e 34) e os patterns no disquete
+ * (load: o st.seq de um disquete de qualquer versao, com o que ficou de fora).
  *
  * Sem DOM: o relogio (now), o BPM, o tocar e o metronomo chegam por callbacks, entao da para testar com um
  * relogio simulado (tick(now) chamado a mao) e um OfflineAudioContext. Quem liga isto a face e novo/js/sequencer-ui.js.
@@ -55,7 +57,7 @@ window.RJ = window.RJ || {};
     if (Array.isArray(d.prot)) out.prot = [...new Set(d.prot.map(int).filter(x => x >= 0 && x < banks))].sort();
     let total = 0;
     const pats = d.pats && typeof d.pats === "object" ? d.pats : {};
-    Object.keys(pats).sort((a, c) => a - c).forEach(key => {
+    Object.keys(pats).filter(k => /^\d+$/.test(k)).sort((a, c) => a - c).forEach(key => {   // so chave "0".."59" (nada de "", "0x10", "1e1")
       const n = int(+key), p = pats[key];
       if (!(n >= 0 && n < slots) || !p || typeof p !== "object") return;
       const len = Math.max(1, Math.min(99, int(p.len) || LDEF));
@@ -71,6 +73,40 @@ window.RJ = window.RJ || {};
       if (ev.length) out.pats[n] = { len, ev };   // pattern sem nota = pad sem pattern
     });
     return out;
+  }
+
+  /**
+   * Os patterns de um disquete (B3): devolve { seq (limpo), why, pats, notes }. why: null (formato desta face: v 1 com
+   * 12 pads por banco, ou sem "pads"), "none" (disquete sem patterns: a memoria fica vazia, como o Load do OG, p. 40),
+   * "p16" (patterns de 16 pads por banco, o plano do 404 de 16 pads: os pads 13-16 e os bancos alem do E saem),
+   * "ver" (outra versao: nao abre os patterns), "bad" (campo ilegivel). pats/notes = patterns e notas que ficaram de
+   * fora (fora da faixa, pattern sem nota, memoria de notas estourada).
+   */
+  function load(raw, slots = 60, banks = 5, pads = 12) {
+    const empty = () => clean(null, slots, banks);
+    if (raw === undefined || raw === null) return { seq: empty(), why: "none", pats: 0, notes: 0 };
+    if (typeof raw !== "object" || Array.isArray(raw)) return { seq: empty(), why: "bad", pats: 0, notes: 0 };
+    const pin = raw.pats && typeof raw.pats === "object" ? raw.pats : {};
+    let inPats = 0, inNotes = 0;
+    Object.keys(pin).forEach(k => { const p = pin[k]; const n = p && Array.isArray(p.ev) ? p.ev.length : 0; if (n) { inPats++; inNotes += n; } });
+    if (raw.v !== 1) return { seq: empty(), why: "ver", pats: inPats, notes: inNotes };
+    const per = raw.pads === undefined ? pads : int(raw.pads);
+    let src = raw, why = null;
+    if (per !== pads) {
+      if (!(per > 0 && per <= 16)) return { seq: empty(), why: "bad", pats: inPats, notes: inNotes };
+      // outro numero de pads por banco: o pattern do banco b, pad t vai para o mesmo banco e pad aqui (sobra = fora);
+      // as notas guardam o pad guardado do sample, que vem igual aos samples (o pad guardado i continua i)
+      const pm = {};
+      Object.keys(pin).filter(k => /^\d+$/.test(k)).forEach(k => {
+        const n = int(+k), b = Math.floor(n / per), t = n - b * per;
+        if (n >= 0 && t < pads && b < banks) pm[b * pads + t] = pin[k];
+      });
+      src = Object.assign({}, raw, { pats: pm });
+      why = "p16";
+    }
+    const seq = clean(src, slots, banks);
+    const outNotes = noteCount(seq), outPats = Object.keys(seq.pats).length;
+    return { seq, why, per, pats: inPats - outPats, notes: inNotes - outNotes };
   }
 
   /** Quantos ticks a nota tocada no tick n (continuo) vira com a grade g (0 = oFF: o tick inteiro mais perto). */
@@ -130,6 +166,7 @@ window.RJ = window.RJ || {};
       this.open = new Map();          // pad guardado -> { ev, n0 }: nota sendo gravada (pad ainda apertado)
       this.skip = new WeakMap();      // nota -> passada em que ela nao toca (o dedo ja tocou ao vivo)
       this.ers = new Map();           // ErS: pad guardado (ou "all" = HOLD) -> tick absoluto ate onde ja apagou
+      this.sw = null;                 // troca tardia marcada (reserva nos ultimos ~120 ms): { at, key, a, bpm, end }; o antigo soa ate at
       this.timer = 0;
     }
 
@@ -159,6 +196,10 @@ window.RJ = window.RJ || {};
      *  Nos ultimos ~120 ms do loop o agendador ja marcou o comeco da proxima passada do atual: desmarca e troca no fim. */
     reserve(k, now = this.o.now()) {
       if (!(this.mode === "play" && this.pat(k))) return;
+      if (this.sw && this.sw.at > now) {   // troca tardia ja marcada: o mesmo pad = nada; outro = desfaz e reserva este (o ultimo vale)
+        if (k === this.key) return;
+        this.unswitch(now);
+      }
       this.next = k === this.key ? -1 : k;
       if (this.next < 0) return;
       if (this.o.bpm() !== this.bpm) this.anchor(now, this.tickAt(now));   // como no tick: o BPM mudou desde a ultima marcacao
@@ -171,11 +212,33 @@ window.RJ = window.RJ || {};
         this.offs = this.offs.filter(x => !cut.has(x.v));
         if (this.o.cut) this.o.cut(late, now);
       }
+      this.sw = { at: tE, key: this.key, a: this.a, bpm: this.bpm, end };
       this.key = this.next; this.next = -1;
       this.anchor(tE, 0); this.sched = 0;
       this.o.change && this.o.change("switch", this.key, tE);
       this.tick(now);
     }
+    /** Desfaz a troca tardia (antes da hora dela): o novo nao toca, o antigo segue do fim desta passada. */
+    unswitch(now = this.o.now()) {
+      const w = this.sw;
+      if (!w) return;
+      this.sw = null;
+      const late = this.voices.filter(x => x.when >= w.at - 1e-6);
+      if (late.length) {
+        const cut = new Set(late.map(x => x.v));
+        this.voices = this.voices.filter(x => !cut.has(x.v));
+        this.offs = this.offs.filter(x => !cut.has(x.v));
+        if (this.o.cut) this.o.cut(late, now);
+      }
+      this.key = w.key; this.next = -1;
+      this.a = w.a; this.bpm = w.bpm; this.sched = w.end;
+      this.o.change && this.o.change("switch", this.key, now);
+      this.tick(now);
+    }
+    /** O pattern que se ouve agora (a troca tardia ainda nao chegou: o antigo); -1 parado. */
+    playing(now = this.o.now()) { return this.mode !== "play" ? -1 : this.sw && this.sw.at > now ? this.sw.key : this.key; }
+    /** O que entra no fim do loop (reservado, ou a troca tardia ja marcada); -1 nenhum. */
+    pending(now = this.o.now()) { return this.mode !== "play" ? -1 : this.sw && this.sw.at > now ? this.key : this.next; }
     /** PATTERN STOP: para o loop; as notas marcadas no futuro nao tocam e o pad em Loop para (ESTIMATIVA). */
     stop(now = this.o.now()) {
       if (this.mode === "idle") return;
@@ -185,7 +248,7 @@ window.RJ = window.RJ || {};
       this.o.change && this.o.change("stop");
     }
     halt(now) {
-      clearInterval(this.timer); this.timer = 0;
+      clearInterval(this.timer); this.timer = 0; this.sw = null;
       const vs = this.voices; this.voices = []; this.offs = [];
       if (this.o.cut) this.o.cut(vs, now);
     }
@@ -332,7 +395,11 @@ window.RJ = window.RJ || {};
     /** Marca tudo o que cai ate now + LOOK: notas (play/rec com tick >= 0), metronomo (ready/rec), troca reservada. */
     tick(now = this.o.now()) {
       if (this.mode === "idle") return;
-      if (this.o.bpm() !== this.bpm) this.anchor(now, this.tickAt(now));   // BPM mudou: o resto segue o novo tempo
+      if (this.sw && this.sw.at <= now) this.sw = null;   // a troca tardia chegou
+      if (this.o.bpm() !== this.bpm) {   // BPM mudou: o resto segue o novo tempo
+        this.anchor(now, this.tickAt(now));
+        if (this.sw) this.sw.at = this.timeAt(0);   // troca tardia: o novo comeca na hora nova
+      }
       const hT = now + (this.o.look ? this.o.look() : LOOK);   // aba em segundo plano: o timer anda de ~1 s em 1 s, a olhada cresce
       for (let guard = 0; guard < 256; guard++) {
         const h = this.tickAt(hT), from = this.sched;
@@ -393,5 +460,5 @@ window.RJ = window.RJ || {};
 
   RJ.D4Seq = Seq;
   Object.assign(Seq, { PPQ, BEATS, BAR, MAX_NOTES, LOOK, LEAD, QUANT, QDEF, LENGTHS, LDEF, METRO0, clean, quantize, noteCount, qOf,
-    isProt, delPats, delAll, swapPats });
+    isProt, delPats, delAll, swapPats, load });
 })();

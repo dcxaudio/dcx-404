@@ -1,4 +1,4 @@
-/* DCX-404 face nova - Pattern Sequencer na face (Fase 4 / B1-B2)
+/* DCX-404 face nova - Pattern Sequencer na face (Fase 4 / B1-B3)
  *
  * Liga o relogio do js/sequencer.js (RJ.D4Seq) aos botoes, pads, visor e knobs da face nova, pelo gancho
  * d404.seqHook do motor (js/dcx404.js chama: key, pad, hit, release, cancel, ctrl, display, renderPads,
@@ -13,7 +13,9 @@
  *   todos; DEL de novo volta a gravar). Fora da gravacao, com PATTERN SELECT: DEL = "dEL" (pads com pattern piscam,
  *   escolha um ou mais do mesmo banco, DEL apaga; "EMP" banco vazio, "Prt" protegido); CANCEL + DEL = "dAL" (bancos
  *   piscam; um banco = a memoria toda; DEL apaga); DEL + REC = "CHG" (pad de origem, pad de destino, que pode ser
- *   vazio, REC troca os dois). CANCEL desiste. Fica para o B3: disquete.
+ *   vazio, REC troca os dois). CANCEL desiste.
+ * B3: um so pattern reservado (o ultimo pad vale; o reservado de novo nao muda nada; o que se ouve de novo para);
+ *   CANCEL 4x rapido = silencia tudo (p. 8); fechar a aba com o ponto piscando (salvando) ou gravando = aviso (p. 36).
  */
 (function () {
   "use strict";
@@ -82,7 +84,12 @@
       }),
       look: () => (document.hidden ? 1.2 : S.LOOK),
       click,
-      change: () => { d.renderPads(); d.renderButtons(); },
+      // troca marcada a frente (fim do loop): redesenha de novo na hora em que ela soa
+      change: (what, k, t) => {
+        d.renderPads(); d.renderButtons();
+        const c = ctx();
+        if (what === "switch" && c && t > c.currentTime) setTimeout(() => d.renderPads(), (t - c.currentTime) * 1000 + 15);
+      },
     });
     RJ.d4seq = seq;   // console/QA
     /** Para a voz v do pad s (a do motor pelo stopVoice; uma ja substituida, direto no no). */
@@ -131,7 +138,8 @@
       U.saveUntil = performance.now() + 700; U.saveTxt = txt || "Ptn";
       d.dirty();
       clearTimeout(d.flashTimer);
-      setTimeout(() => { d.saveNow(); U.saveUntil = 0; render(); }, 720);
+      clearTimeout(U.saveTimer);   // dois seguidos: o ponto (e o aviso ao fechar) vai ate o fim do ultimo
+      U.saveTimer = setTimeout(() => { d.saveNow(); U.saveUntil = 0; render(); }, 720);
     }
     function ersEnd() {
       U.erp.forEach(s => seq.ersOff(s)); U.erp.clear();
@@ -152,8 +160,8 @@
     const anyPat = () => Object.keys(data().pats).some(k => has(+k));
     /** O que sai ou muda: se e o tocando (ou o reservado), o pattern para (ou a reserva cai). */
     function touch(keys) {
-      if (seq.mode === "play" && keys.includes(seq.key)) seq.stop();
-      if (seq.mode === "play" && keys.includes(seq.next)) seq.next = -1;
+      if (keys.includes(seq.playing())) seq.stop();   // o que se ouve (na troca tardia, o antigo)
+      else if (keys.includes(seq.pending())) { if (seq.sw && seq.sw.at > now()) seq.unswitch(); else seq.next = -1; }   // o reservado: a reserva cai
     }
     function opEnd(msg) { U.op = null; render(); if (msg) flash(msg, 500); }
     function opResult(r, txt) {
@@ -222,7 +230,7 @@
       const k = pbank() * PADS + t;
       if (U.stage === "arm") { ready(k); return; }   // destino: pad vazio (novo) ou com pattern (overdub, ESTIMATIVA p. 36)
       if (!has(k)) return;                           // pad sem pattern: nada (p. 34)
-      if (seq.mode === "play" && seq.key === k) { seq.stop(); flash("Ptn", 500); }                    // o pad tocando para (p. 34)
+      if (seq.playing() === k) { seq.stop(); flash("Ptn", 500); }                                     // o pad que se ouve para (p. 34)
       else if (seq.mode === "play" && !U.sub) { seq.reserve(k); flash(show(k)); }   // reserva (fim do loop; nos ultimos ~120 ms o reserve desmarca e troca no fim)
       else { seq.start(k); flash(show(k)); }                                                         // ja (ou SUB PAD + pad)
       d.renderPads();
@@ -253,9 +261,34 @@
       return String(Math.round(data().metro * 127));
     }
 
+    /* ---------------------------------------- CANCEL 4x rapido = silencia tudo (p. 8) */
+    // ESTIMATIVA: "rapido" = cada toque ate 400 ms depois do anterior; os 3 primeiros fazem o CANCEL de sempre
+    let taps = [];
+    function tap() {
+      const t = performance.now();
+      if (taps.length && t - taps[taps.length - 1] >= 400) taps = [];
+      taps.push(t);
+      if (taps.length < 4) return false;
+      taps = [];
+      if (U.stage === "rec") endRec(); else if (U.stage) quitStandby();
+      if (seq.mode !== "idle") seq.stop();
+      U.op = null; U.sel = null; U.sub = false;
+      d.stopAll();
+      d.renderPads(); d.renderButtons();
+      flash("---", 500);
+      return true;
+    }
+
+    /* ---------------------------------------- fechar a aba salvando ou gravando (p. 36, 47-48) */
+    const busy = () => !!(U.saveUntil || U.stage === "rec");
+    window.addEventListener("beforeunload", e => { if (busy()) { e.preventDefault(); e.returnValue = ""; } });
+    window.addEventListener("pagehide", () => { if (busy()) { try { d.saveNow(); } catch (err) { /* fechando */ } } });   // saiu mesmo assim: guarda o que ha
+
     /* ---------------------------------------- o gancho do motor */
     d.seqHook = {
       ptn: () => U.ptn || !!U.stage,
+      tap,
+      busy,
       /** Estado novo (disquete/projeto aberto, abortRecs): para o pattern e a gravacao, PATTERN SELECT continua como esta. */
       reset() {
         if (seq.mode !== "idle") seq.stop();
@@ -421,7 +454,7 @@
             el.setAttribute("aria-label", "Pattern " + d.padLabel(k) + (h ? "" : " (vazio)") + (o.kind === "del" && o.sel.has(k) ? ": escolhido" : k === o.from ? ": origem" : k === o.to ? ": destino" : ""));
             return;
           }
-          const playing = seq.mode === "play" && seq.key === k, next = seq.mode === "play" && seq.next === k;
+          const playing = seq.playing() === k, next = seq.pending() === k;
           el.classList.toggle("used", h);
           if (U.stage === "arm") { el.classList.toggle("hit", !h); el.classList.toggle("blink", !h); }   // destinos livres piscam (p. 34)
           else { el.classList.toggle("hit", h); el.classList.toggle("blink", h && !playing); }          // com pattern piscam; o tocando fica aceso
