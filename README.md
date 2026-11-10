@@ -16,7 +16,8 @@ O painel novo (o cinza do Figma, "DX 404") está em [`novo/`](novo/). A página 
 - **Reamostragem:** grava o que sai do 404 (com os efeitos) num pad.
 - **Salvar e abrir disquete:** os botões na barra de cima salvam e abrem o estado inteiro (60 pads, efeitos, volume, BPM, nomes e modos) num arquivo `…-dcx-404.json`. O mesmo botão abre o disquete ou o projeto `.zip` do [DCX Studio](https://github.com/dcxaudio/dcx-studio), que só tem 16 pads (entram A1–A12 e B1–B4).
 - **MIDI Learn:** o botão no alto da página aprende qualquer controle do painel.
-- Ainda sem ação: Pattern Sequencer e MIC (decorativo).
+- **Pattern Sequencer:** 60 patterns (bancos A–E × 12 pads, independentes dos bancos de sample). **PATTERN SELECT** escolhe e toca em loop (pad reservado entra no fim do loop; **SUB PAD** + pad troca na hora). Gravar com **REC**: contagem de 1 compasso, metrônomo, **LENGTH** (compassos), **QUANTIZE** e overdub. Apagar e editar: `ErS` (apaga notas gravando), `dEL`, `dAL` e `CHG` (trocar pads). Proteção por banco (`Prt`; o gesto para ligá-la ainda está em decisão). Os patterns vão no disquete. Teclas padrão do computador: Ctrl 1–3 em U/J, I/K e O/L; bancos em F1–F5; REC em T; MFX em N; CANCEL em Backspace.
+- Ainda sem ação: MIC (decorativo).
 
 Detalhes e códigos de visor de cada efeito estão no [manual](docs/manual.md); o histórico, no [CHANGELOG](CHANGELOG.md).
 
