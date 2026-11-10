@@ -1,16 +1,18 @@
-/* DCX 404 - Pattern Sequencer (face nova, Fase 4 / B1)
+/* DCX 404 - Pattern Sequencer (face nova, Fase 4 / B1-B2)
  *
  * O sequenciador do SP-404 OG (manual p. 34-37): um pattern e uma performance de pads gravada em tempo real,
  * presa a um pad de um banco de patterns (aqui 5 bancos A-E x 12 pads = 60 patterns, como os pads da face nova;
  * os bancos de pattern sao independentes dos de sample, p. 34). BPM global (o st.bpm do 404, p. 34), 96 ticks por
  * seminima (p. 52), 1 a 99 compassos de 4/4, quantize na gravacao (4, 4-3, 8, 8-3, 16, 16-3, 32, oFF; p. 35),
  * contagem de 1 compasso antes de gravar, gravacao em loop com overdub, rehearsal ("rEH").
+ * B2 (p. 36-37): apagar notas gravando ("ErS": segurar o pad ou o HOLD), apagar patterns ("dEL"), apagar a memoria
+ * ("dAL") e trocar dois patterns de pad ("CHG"), com "EMP", "Prt" (banco protegido) e "FuL".
  *
  * Sem DOM: o relogio (now), o BPM, o tocar e o metronomo chegam por callbacks, entao da para testar com um
  * relogio simulado (tick(now) chamado a mao) e um OfflineAudioContext. Quem liga isto a face e novo/js/sequencer-ui.js.
  *
  * Estado (st.seq do 404, versionado):
- *   { v: 1, bank: 0..4, quant: "16", metro: 0..1,
+ *   { v: 1, bank: 0..4, quant: "16", metro: 0..1, prot: [bancos de pattern protegidos, 0..4],
  *     pats: { "<n>": { len: compassos, ev: [ { t: tick 0..len*384-1, s: pad guardado 0..59, l: ticks ou null } ] } } }
  *   n = banco do pattern * 12 + pad (0..59); s = o sample tocado (qualquer banco); l = quanto o pad ficou apertado
  *   (so vale para pad em Gate, sem Hold); ev em ordem de t.
@@ -42,12 +44,15 @@ window.RJ = window.RJ || {};
 
   /** O st.seq limpo (estado/disquete de qualquer versao, ou nada): campos fora da faixa caem no padrao, notas ruins saem. */
   function clean(d, slots = 60, banks = 5) {
-    const out = { v: 1, bank: 0, quant: QDEF, metro: METRO0, pats: {} };
+    const out = { v: 1, bank: 0, quant: QDEF, metro: METRO0, prot: [], pats: {} };
     if (!d || typeof d !== "object") return out;
     const b = int(d.bank);
     if (b >= 0 && b < banks) out.bank = b;
     if (QUANT.some(q => q.id === d.quant)) out.quant = d.quant;
     if (typeof d.metro === "number" && isFinite(d.metro)) out.metro = Math.max(0, Math.min(1, d.metro));
+    // Protect (p. 43): de fabrica o OG protege o banco A; aqui comeca sem protecao (ESTIMATIVA/decisao: o 404 ainda nao
+    // tem o gesto de ligar segurando REMAIN; protegido de fabrica, o pattern recem-gravado no A nao sairia)
+    if (Array.isArray(d.prot)) out.prot = [...new Set(d.prot.map(int).filter(x => x >= 0 && x < banks))].sort();
     let total = 0;
     const pats = d.pats && typeof d.pats === "object" ? d.pats : {};
     Object.keys(pats).sort((a, c) => a - c).forEach(key => {
@@ -73,6 +78,30 @@ window.RJ = window.RJ || {};
 
   /** Total de notas guardadas (todos os patterns). */
   function noteCount(seq) { let c = 0; Object.values(seq.pats).forEach(p => { c += p.ev.length; }); return c; }
+
+  /* ---------------------------------------- apagar e trocar (p. 36-37), sobre o st.seq; pads = 12 por banco */
+  const isProt = (seq, bank) => !!(seq.prot && seq.prot.includes(bank));
+  /** Apaga os patterns da lista: "EMP" se nenhum tem pattern, "Prt" se algum esta num banco protegido (nada muda), ou o numero apagado. */
+  function delPats(seq, keys, pads = 12) {
+    const ks = keys.filter(k => seq.pats[k]);
+    if (!ks.length) return "EMP";
+    if (ks.some(k => isProt(seq, Math.floor(k / pads)))) return "Prt";
+    ks.forEach(k => { delete seq.pats[k]; });
+    return ks.length;
+  }
+  /** Apaga a memoria inteira (dAL): "EMP" vazia, "Prt" se um banco protegido tem pattern (nada muda), ou o numero apagado. */
+  function delAll(seq, pads = 12) { return delPats(seq, Object.keys(seq.pats).map(Number), pads); }
+  /** Troca os patterns dos pads a e b (b pode ser vazio): "EMP" (a vazio), "Prt", "FuL" (memoria de notas estourada), ou true. */
+  function swapPats(seq, a, b, pads = 12, max = MAX_NOTES) {
+    if (!seq.pats[a]) return "EMP";
+    if (isProt(seq, Math.floor(a / pads)) || isProt(seq, Math.floor(b / pads))) return "Prt";
+    if (noteCount(seq) > max) return "FuL";   // memoria unica no DCX: a troca nao gasta nota; so se ja passou do limite
+    if (a === b) return true;
+    const pa = seq.pats[a], pb = seq.pats[b];
+    seq.pats[b] = pa;
+    if (pb) seq.pats[a] = pb; else delete seq.pats[a];
+    return true;
+  }
 
   /**
    * O relogio do sequenciador. o = {
@@ -100,6 +129,7 @@ window.RJ = window.RJ || {};
       this.offs = [];                 // { s, v, when }: notas Gate esperando a hora de soltar
       this.open = new Map();          // pad guardado -> { ev, n0 }: nota sendo gravada (pad ainda apertado)
       this.skip = new WeakMap();      // nota -> passada em que ela nao toca (o dedo ja tocou ao vivo)
+      this.ers = new Map();           // ErS: pad guardado (ou "all" = HOLD) -> tick absoluto ate onde ja apagou
       this.timer = 0;
     }
 
@@ -125,8 +155,27 @@ window.RJ = window.RJ || {};
       this.run(); this.tick(now);
       return true;
     }
-    /** Reserva o proximo: entra quando o atual acaba (fim do loop). Um so reservado; o ultimo vale. */
-    reserve(k) { if (this.mode === "play" && this.pat(k)) this.next = k === this.key ? -1 : k; }
+    /** Reserva o proximo: entra quando o atual acaba (fim do loop). Um so reservado; o ultimo vale.
+     *  Nos ultimos ~120 ms do loop o agendador ja marcou o comeco da proxima passada do atual: desmarca e troca no fim. */
+    reserve(k, now = this.o.now()) {
+      if (!(this.mode === "play" && this.pat(k))) return;
+      this.next = k === this.key ? -1 : k;
+      if (this.next < 0) return;
+      if (this.o.bpm() !== this.bpm) this.anchor(now, this.tickAt(now));   // como no tick: o BPM mudou desde a ultima marcacao
+      const L = this.lenTicks(), n = this.tickAt(now), end = (Math.floor(n / L) + 1) * L;
+      if (this.sched <= end) return;   // o fim ainda nao foi marcado: a troca acontece no tick()
+      const tE = this.timeAt(end), late = this.voices.filter(x => x.n >= end);   // pelo tick (o BPM pode ter mudado)
+      if (late.length) {
+        const cut = new Set(late.map(x => x.v));
+        this.voices = this.voices.filter(x => !cut.has(x.v));
+        this.offs = this.offs.filter(x => !cut.has(x.v));
+        if (this.o.cut) this.o.cut(late, now);
+      }
+      this.key = this.next; this.next = -1;
+      this.anchor(tE, 0); this.sched = 0;
+      this.o.change && this.o.change("switch", this.key, tE);
+      this.tick(now);
+    }
     /** PATTERN STOP: para o loop; as notas marcadas no futuro nao tocam e o pad em Loop para (ESTIMATIVA). */
     stop(now = this.o.now()) {
       if (this.mode === "idle") return;
@@ -205,11 +254,69 @@ window.RJ = window.RJ || {};
       if (!p || this.mode !== "rec") return;
       o.ev.l = Math.max(1, Math.min(p.len * BAR, Math.round(this.tickAt(now) - o.n0)));
     }
+    /* ---------------------------------------- ErS: apagar notas gravando (p. 36, 44) */
+    /** Comeca a apagar as notas do pad guardado s (ou de todos, s = "all": o HOLD) enquanto estiver segurado. */
+    ersOn(s, now = this.o.now()) {
+      if (this.mode !== "rec" || this.ers.has(s)) return false;
+      this.ers.set(s, this.tickAt(now));
+      // o que o agendador ja marcou a frente desse pad nao toca (e some no apagar)
+      const late = this.voices.filter(x => x.when > now + 1e-4 && (s === "all" || x.s === s));
+      if (late.length) {
+        const cut = new Set(late.map(x => x.v));
+        this.voices = this.voices.filter(x => !cut.has(x.v));
+        this.offs = this.offs.filter(x => !cut.has(x.v));
+        if (this.o.cut) this.o.cut(late, now);
+      }
+      return true;
+    }
+    /** Soltou: apaga ate agora e devolve o que o agendador pulou a frente (de agora ate o marcado), que nao foi apagado. */
+    ersOff(s, now = this.o.now()) {
+      if (!this.ers.has(s)) return 0;
+      const gone = this.ersSweep(now, s);
+      this.ers.delete(s);
+      const p = this.pat();
+      if (p && this.mode === "rec" && this.sched > 0) {
+        const L = p.len * BAR, a0 = this.tickAt(now), a = Math.max(0, a0), b = this.sched;
+        for (let base = Math.floor(a / L) * L; base < b; base += L) {
+          for (const ev of p.ev) {
+            const n = base + ev.t;
+            if (n <= a0 || n >= b || !(s === "all" || ev.s === s) || this.erasing(ev.s)) continue;
+            if (this.skip.get(ev) === Math.floor(n / L)) continue;
+            const when = this.timeAt(n), v = this.o.play(ev.s, when, ev);
+            if (v) { this.voices.push({ s: ev.s, v, when, n }); if (ev.l != null) this.offs.push({ s: ev.s, v, when: this.timeAt(n + ev.l) }); }
+          }
+        }
+      }
+      return gone;
+    }
+    erasing(s) { return this.ers.size > 0 && (this.ers.has("all") || this.ers.has(s)); }
+    /** Apaga as notas do trecho segurado (do ultimo apagar ate agora; da a volta no loop). Devolve quantas sairam. */
+    ersSweep(now = this.o.now(), only) {
+      const p = this.pat();
+      if (!p || !this.ers.size) return 0;
+      const L = p.len * BAR, b = this.tickAt(now);
+      let gone = 0;
+      this.ers.forEach((a0, s) => {
+        if (only !== undefined && s !== only) return;
+        const a = Math.max(0, a0);
+        this.ers.set(s, Math.max(a0, b));
+        if (b < a) return;   // contagem: ainda nao ha o que apagar
+        const all = b - a >= L, ta = a - Math.floor(a / L) * L, tb = b - Math.floor(b / L) * L;
+        const inWin = t => all || (ta <= tb ? t >= ta && t <= tb : t >= ta || t <= tb);
+        const before = p.ev.length;
+        p.ev = p.ev.filter(e => !((s === "all" || e.s === s) && inWin(e.t)));
+        gone += before - p.ev.length;
+      });
+      return gone;
+    }
+
     /** Para a gravacao (CANCEL): pattern novo sem nota some. Devolve { key, notes } do que ficou. */
     stopRec(now = this.o.now()) {
       const k = this.key, d = this.o.data();
       const wasRec = this.mode === "rec";
       if (wasRec) this.open.forEach((o, s) => this.release(s, now));   // pad ainda apertado: a nota fecha no CANCEL
+      if (wasRec && this.ers.size) this.ersSweep(now);                  // apagando no CANCEL: apaga ate aqui
+      this.ers.clear();
       this.mode = "idle"; this.key = -1; this.next = -1; this.reh = false;
       this.open.clear(); this.skip = new WeakMap();
       this.halt(now);
@@ -234,6 +341,7 @@ window.RJ = window.RJ || {};
         if (from < 0) { const to = Math.min(h, 0); this.beats(from, to); this.sched = to; continue; }   // contagem
         const p = this.pat();
         if (!p) { if (this.mode === "play") this.stop(now); break; }   // o pattern sumiu (estado novo)
+        if (this.ers.size) this.ersSweep(now);   // ErS segurado: apaga o trecho que ja passou
         const L = p.len * BAR, pass = Math.floor(from / L), end = (pass + 1) * L, to = Math.min(h, end);
         if (this.mode === "rec") this.beats(from, to);
         this.notes(p, pass * L, from, to, pass);
@@ -251,7 +359,8 @@ window.RJ = window.RJ || {};
         const due = this.offs.filter(x => x.when < hT);
         if (due.length) { this.offs = this.offs.filter(x => x.when >= hT); due.forEach(x => this.o.off && this.o.off(x.s, x.when, x.v)); }
       }
-      if (this.voices.length > 64) this.voices = this.voices.filter(x => x.when > now - 30).slice(-64);
+      // so as velhas saem (por quantidade nao: o ErS e a reserva tardia cortam as marcadas a frente pela lista)
+      if (this.voices.length > 64) this.voices = this.voices.filter(x => x.when > now - 30);
     }
     notes(p, base, from, to, pass) {
       for (const ev of p.ev) {
@@ -259,9 +368,10 @@ window.RJ = window.RJ || {};
         if (n < from) continue;
         if (n >= to) break;
         if (this.skip.get(ev) === pass) continue;
+        if (this.erasing(ev.s)) continue;   // ErS segurado: a nota nao toca (e sai no apagar)
         const when = this.timeAt(n), v = this.o.play(ev.s, when, ev);
         if (v) {
-          this.voices.push({ s: ev.s, v, when });
+          this.voices.push({ s: ev.s, v, when, n });
           if (ev.l != null) this.offs.push({ s: ev.s, v, when: this.timeAt(n + ev.l) });
         }
       }
@@ -282,5 +392,6 @@ window.RJ = window.RJ || {};
   }
 
   RJ.D4Seq = Seq;
-  Object.assign(Seq, { PPQ, BEATS, BAR, MAX_NOTES, LOOK, LEAD, QUANT, QDEF, LENGTHS, LDEF, METRO0, clean, quantize, noteCount, qOf });
+  Object.assign(Seq, { PPQ, BEATS, BAR, MAX_NOTES, LOOK, LEAD, QUANT, QDEF, LENGTHS, LDEF, METRO0, clean, quantize, noteCount, qOf,
+    isProt, delPats, delAll, swapPats });
 })();
