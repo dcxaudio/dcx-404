@@ -45,7 +45,10 @@ window.RJ = window.RJ || {};
   const ROLLS = [1, 1 / 2, 1 / 3, 1 / 4, 1 / 6, 1 / 8];  // Sub Pad: 1/4, 1/8, 1/8T, 1/16, 1/16T, 1/32
   const ROLL_SHOW = [" 4", " 8", "8t", "16", "16t", "32"];
   const ROLL_NF = 3;               // face nova: o Sub Pad repete em 1/16 (fixo)
-  const SRC_SHOW = { off: "oFF", rj2000: "rJ", rj950: "950", mix: "Mix", line: "Lin" };
+  // Source no visor (3 digitos): "r.20" = RJ-2000 ("r." como o "L.on"/"S.oF" do manual, p. 19), "950" = RJ-950 (o
+  // numero do modelo, ja legivel). O "J" e o "k" nao existem em 7 segmentos (o "rJ" antigo saia so "r") e o "x"
+  // de "Mix" nao estava na tabela (saia apagado). Mix = M (arco) + i + X (o "H").
+  const SRC_SHOW = { off: "oFF", rj2000: "r.20", rj950: "950", mix: "MiX", line: "Lin" };
   const VELS = ["soft", "linear", "fixed"];
   const VEL_SHOW = { soft: "5UA", linear: "Lin", fixed: "127" };
   const LONG = 400;                // ms: segurar mais que isso = momentaneo (sem Hold)
@@ -87,7 +90,8 @@ window.RJ = window.RJ || {};
     "H": "bcefg", "h": "cefg", "y": "bcdfg", "S": "afgcd", "c": "deg", "_": "d",
     "M": "abcef",     // M (do "EMP"): o arco de 7 segmentos, como nos visores da Boss
     "q": "abcfg",     // q (Frq do Wah e do Ring Mod)
-    "V": "bcdef" };   // V (drV, LEV): em 7 segmentos e o U
+    "V": "bcdef",     // V (drV, LEV): em 7 segmentos e o U
+    "X": "bcefg" };   // X (MiX do Source): em 7 segmentos e o H
   // o digito do visor da face nova (Figma, "Digito de sete segmentos", 39 x 63)
   const DCX_SEG = {
     a: "M8 0H31L34 3L31 6H8L5 3L8 0Z", b: "M35 5L38 8V26L35 29L32 26V8L35 5Z", c: "M33 34L36 37V55L33 58L30 55V37L33 34Z",
@@ -1508,7 +1512,7 @@ window.RJ = window.RJ || {};
 
     /** Face nova com SOURCE aceso: o CTRL 3 do START/END/LEVEL ajusta a fonte escolhida (manual p. 17, "volume da entrada"). */
     srcLevelOn() { return this.nf && this.src !== "off"; }
-    /** rJ = envio do RJ-2000, 950 = envio do RJ-950 (0 a 2; 1 = igual ao direto); Lin e Mix = o nivel da entrada. */
+    /** r.20 = envio do RJ-2000, 950 = envio do RJ-950 (0 a 2; 1 = igual ao direto); Lin e Mix = o nivel da entrada. */
     srcLevelGet() { return this.src === "rj2000" ? this.st.sendRj / 2 : this.src === "rj950" ? this.st.send950 / 2 : this.st.inLevel; }
     srcLevelSet(v) {
       if (this.src === "rj2000") this.st.sendRj = v * 2;

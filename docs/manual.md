@@ -12,7 +12,7 @@ Em [`../novo/`](../novo/), sem substituir esta versão: o painel cinza do Figma 
   - **BPM:** TAP TEMPO, ou **TIME/BPM** com o pad atual vazio (ou com SOURCE aceso e nada tocando): o visor mostra o BPM do 404 e o **Ctrl 2** ajusta (40–240). Com um sample no pad atual, TIME/BPM continua sendo o BPM do sample (Time Modify). O Ctrl 1 não é mais BPM.
   - **Sub Pad:** repete em 1/16 no BPM (fixo; o valor antigo fica guardado no estado).
   - **Nível do pad:** START/END/LEVEL + Ctrl 3 (0–127).
-  - **Nível da entrada e envios RJ-2000/RJ-950:** SOURCE aceso → START/END/LEVEL → **Ctrl 3** ajusta a fonte escolhida no SOURCE: `rJ` = envio do RJ-2000, `950` = envio do RJ-950, `Lin` e `Mix` = nível da entrada (a Mix soma os dois envios: ajuste cada um escolhendo-o antes). Com o pad atual vazio, o visor mostra o nome da fonte. Ctrl 1/2 seguem no start/end do pad atual.
+  - **Nível da entrada e envios RJ-2000/RJ-950:** SOURCE aceso → START/END/LEVEL → **Ctrl 3** ajusta a fonte escolhida no SOURCE: `r.20` = envio do RJ-2000, `950` = envio do RJ-950, `Lin` e `MiX` = nível da entrada (a Mix soma os dois envios: ajuste cada um escolhendo-o antes). Com o pad atual vazio, o visor mostra o nome da fonte. Ctrl 1/2 seguem no start/end do pad atual.
   - **Estado e disquete antigos** abrem sem erro: um efeito no Bus 2 (o Stopper, por exemplo) vem para o Bus 1 com o mesmo som; com efeito nos dois buses fica o do bus que estava escolhido. Mute, Velocity e a divisão do Sub Pad são ignorados (ficam guardados).
   - **MIDI aprendido na estável:** os atalhos de Bus 1/2, Mute, Velocity, Set-up, Shift, DJFX, Input Level (e pads 13–16) são ignorados em silêncio; a barra do MIDI Learn avisa uma vez "N atalhos antigos sem lugar". Uma cópia intacta do mapa fica em `dcx404-novo/midimap.old`. O mapa guardado só perde esses atalhos quando você fizer um Learn novo (Save).
 - Ainda sem ação: MIC (decorativo).
@@ -112,7 +112,7 @@ Toque em **LIGAR** (ou aperte Espaço). O display mostra `b0.1` e depois o BPM.
 - **Shift:** um toque arma para o próximo botão. Também dá para segurar o Shift do teclado.
 
 ## Entrada
-- **Source** troca entre desligada, **RJ-2000** (só no DCX Studio) e **Line**. Na página solo, a Line pede o microfone ou a entrada de áudio ao navegador na primeira vez. Se ela não abrir, o display mostra `Err`.
+- **Source** troca entre desligada, **RJ-2000** (só no DCX Studio) e **Line**. O visor mostra a fonte escolhida: `oFF` (desligada), `r.20` (RJ-2000; "r." = RJ, como o `L.on`/`S.oF` do manual), `950` (RJ-950), `MiX` (os dois RJ juntos; o M é o arco e o X é o "H" dos 7 segmentos) e `Lin` (Line). RJ-950 e Mix só aparecem no Studio, com os dois aparelhos. Na página solo, a Line pede o microfone ou a entrada de áudio ao navegador na primeira vez. Se ela não abrir, o display mostra `Err`. Códigos aprovados por Igor: `oFF`, `r.20`, `950`, `MiX`, `Lin`.
 - **Level** regula a entrada. Cuidado com microfone e caixas de som abertas: dá microfonia.
 
 ## MIDI
