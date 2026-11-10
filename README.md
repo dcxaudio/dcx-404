@@ -2,7 +2,7 @@
 
 Sampler de performance que roda no navegador, inspirado no SP-404: 12 pads por banco em 5 bancos (A–E, 60 pads), 5 efeitos diretos, 24 MFX numerados como na lista impressa do SP-404, gravação da entrada e reamostragem. É um projeto open source da [DCX Audio](https://github.com/dcxaudio).
 
-O painel novo (o cinza do Figma, "DX 404") está em [`novo/`](novo/). A página da raiz continua sendo a versão estável antiga (16 pads, 9 efeitos), sem mudanças.
+O painel novo (o cinza do Figma, "DX 404") é a página da raiz. A versão antiga (16 pads, 9 efeitos) ficou em [`antigo/`](antigo/), sem mudanças; o endereço `novo/` redireciona para a raiz.
 
 ## O que o painel novo faz
 
@@ -33,17 +33,18 @@ git clone --recurse-submodules https://github.com/dcxaudio/dcx-404.git
 cd dcx-404 && python3 -m http.server 8000
 ```
 
-Depois abra `http://localhost:8000/novo/` (painel novo) ou `http://localhost:8000` (versão estável) e toque em LIGAR. Não tem build nem dependências. Os efeitos com AudioWorklet precisam de `http://` (não abrem por `file://`).
+Depois abra `http://localhost:8000` (painel novo) ou `http://localhost:8000/antigo/` (versão antiga) e toque em LIGAR. Não tem build nem dependências. Os efeitos com AudioWorklet precisam de `http://` (não abrem por `file://`).
 
 ## Estrutura
 
 ```
-index.html            página estável (host do dcx-core com só o 404, 16 pads)
-js/solo.js            monta a página estável: host, teclado, mapa MIDI, tela de ligar
+index.html            o painel novo (página da raiz)
+antigo/index.html     a versão antiga (host do dcx-core com só o 404, 16 pads)
+js/solo.js            monta a página antiga: host, teclado, mapa MIDI, tela de ligar
 js/dcx404.js          o motor do aparelho (usado pelas duas faces): pads, bancos, buses, entrada, REC, Resample, display e armazenamento
 js/fx.js              os efeitos e os AudioWorklets (PITCH, Looper, Stopper, Lo-Fi, modulação, drives)
-css/dcx404.css        o painel da versão estável
-novo/                 o painel novo do Figma: index.html, js/solo.js, js/abrir.js (disquete), css, fontes e 69 SVG
+css/dcx404.css        o painel da versão antiga
+novo/                 os arquivos do painel novo: redirecionamento, js/solo.js, js/abrir.js (disquete), css, fontes e 69 SVG
 beta-2/               versão intermediária anterior
 docs/manual.md        manual curto
 CHANGELOG.md          histórico de mudanças
