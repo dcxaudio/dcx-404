@@ -12,7 +12,8 @@
  * e o 2o troca; as teclas dos pads, Hold, Sub Pad e bancos -/+ (solo.js) sao fixas.
  *
  * Mapa padrao (alem dos pads/Z/X/C/V do solo.js): Ctrl 1 U/J, Ctrl 2 I/K, Ctrl 3 O/L,
- * Volume =/-, bancos A-E F1-F5, REC T, MFX N, CANCEL Backspace.
+ * Volume =/-, bancos A-E F1-F5, REC T, MFX N, CANCEL Backspace; Pattern Sequencer: PATTERN SELECT P,
+ * LENGTH Y, QUANTIZE H, DEL G, REMAIN B, START/END/LEVEL , (virgula), TIME/BPM . (ponto).
  * Knob: a tecla sobe/desce um passo fino; segurando acelera; com a tecla segurada,
  * a roda do mouse tambem gira. Botao: segue a tecla (aperta e solta; repeat ignorado).
  * Nada dispara num campo de texto nem com Cmd/Ctrl/Alt (atalhos do navegador);
@@ -30,6 +31,10 @@
     "volume": ["Equal", "Minus"],
     "bank-a": ["F1"], "bank-b": ["F2"], "bank-c": ["F3"], "bank-d": ["F4"], "bank-e": ["F5"],
     "rec": ["KeyT"], "fx-mfx": ["KeyN"], "cancel": ["Backspace"],
+    // Pattern Sequencer (as que ele usa; Hold Z e Sub Pad X ja sao do solo.js). Sao so padrao: um keymap v2 guardado
+    // nao muda (ele so tem as aprendidas, e o aprendido vem antes do padrao)
+    "pattern-select": ["KeyP"], "length": ["KeyY"], "quantize": ["KeyH"], "del": ["KeyG"], "remain": ["KeyB"],
+    "start-end": ["Comma"], "time-bpm": ["Period"],
   };
   // teclas que o solo.js ja toca (so para a legenda; quem toca e ele)
   const BUILTIN = { "hold": "KeyZ", "subpad": "KeyX" };

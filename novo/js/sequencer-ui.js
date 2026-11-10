@@ -14,6 +14,8 @@
  *   escolha um ou mais do mesmo banco, DEL apaga; "EMP" banco vazio, "Prt" protegido); CANCEL + DEL = "dAL" (bancos
  *   piscam; um banco = a memoria toda; DEL apaga); DEL + REC = "CHG" (pad de origem, pad de destino, que pode ser
  *   vazio, REC troca os dois). CANCEL desiste.
+ * Protect (ADAPTACAO, p. 43): PATTERN SELECT aceso, REMAIN segurado + banco A-E = liga/desliga o Protect do banco
+ *   ("A.on"/"A.oF"; segurando, os bancos protegidos ficam acesos); Shift + LIGAR = os 5 bancos protegidos ("P.on").
  * B3: um so pattern reservado (o ultimo pad vale; o reservado de novo nao muda nada; o que se ouve de novo para);
  *   CANCEL 4x rapido = silencia tudo (p. 8); fechar a aba com o ponto piscando (salvando) ou gravando = aviso (p. 36).
  */
@@ -32,7 +34,7 @@
     // op: null | { kind: "del", sel: Set } | { kind: "dal", on: bool } | { kind: "chg", from: -1, to: -1 } (apagar/trocar, B2)
     // ers: DEL aceso gravando ("ErS"); erp: pad da tela -> pad guardado sendo apagado; ersHold: HOLD segurado no ErS
     const U = { ptn: false, stage: null, sel: null, sub: false, saveUntil: 0, saveTxt: "Ptn", ate: new Set(), recKey: -1,
-      op: null, ers: false, erp: new Map(), ersHold: false, delDown: false, ersAte: new Set() };
+      op: null, ers: false, erp: new Map(), ersHold: false, delDown: false, ersAte: new Set(), rem: false };
 
     const data = () => {
       const st = d.st;
@@ -112,11 +114,51 @@
         if (d.sed) d.sedExit();   // SAMPLE EDIT aberto: fecha (no modo pattern o START/END/LEVEL nao o fecharia)
         d.endMfxPick();
       }
-      U.ate.clear(); U.op = null;
+      U.ate.clear(); U.op = null; U.rem = false;
       render();
     }
+    /* ---------------------------------------- Protect (p. 43; o gesto e ADAPTACAO) */
+    const SEG = "AbCdE";   // no visor de 7 segmentos, B e D minusculos (como "dEL", "b-A")
+    const protTxt = b => SEG[b] + (S.isProt(data(), b) ? ".on" : ".oF");
+    function protToggle(b) {
+      const dd = data(), p = new Set(dd.prot || []);
+      if (p.has(b)) p.delete(b); else p.add(b);
+      dd.prot = [...p].sort((x, y) => x - y);
+      d.dirty();
+    }
+    // Shift + LIGAR (clique, ou Shift + Enter/Espaco na tela LIGAR) = protege os 5 bancos ("P.on"), como ligar o SP-404
+    // segurando REMAIN; desproteger e pelo REMAIN + banco
+    // so vale uma vez (o Enter no botao gera keydown e click) e so no mesmo gesto (marca de tempo, 300 ms)
+    let bootProt = 0, booting = false;
+    const arm0 = () => { if (!booting) bootProt = performance.now(); };
+    window.addEventListener("click", e => {
+      if (e.shiftKey && !d.host.on && e.target && e.target.closest && e.target.closest("#power-btn")) arm0();
+    }, true);
+    window.addEventListener("keydown", e => {
+      if (e.shiftKey && !d.host.on && !(e.metaKey || e.ctrlKey || e.altKey) && (e.code === "Space" || e.code === "Enter")) arm0();
+    }, true);
+    const fire = () => {
+      if (!bootProt) return;
+      const ok = performance.now() - bootProt < 300 && d.host.on;   // a tela LIGAR ligou neste gesto
+      bootProt = 0;
+      if (ok) protBoot();
+    };
+    window.addEventListener("click", fire);
+    window.addEventListener("keydown", fire);
+    function protBoot() {
+      booting = true;
+      const t0 = performance.now();
+      const iv = setInterval(() => {   // espera o estado guardado entrar (boot e assincrono)
+        if (!d.loaded) { if (performance.now() - t0 > 15000) clearInterval(iv); return; }
+        clearInterval(iv);
+        const dd = data();
+        dd.prot = Array.from({ length: NB }, (_, k) => k);
+        d.dirty();
+        setTimeout(() => { if (d.on) { flash("P.on", 1200); d.renderButtons(); } }, 950);   // depois da versao no visor
+      }, 50);
+    }
     function arm() {
-      U.stage = "arm"; U.sel = null;
+      U.stage = "arm"; U.sel = null; U.rem = false;
       d.sedExit();
       render();
     }
@@ -172,7 +214,7 @@
     function delStart() {
       // nenhum pattern: "EMP" (p. 36); banco atual vazio com patterns em outro: entra (escolha o banco depois do DEL)
       if (!anyPat()) { flash("EMP", 900); return; }
-      U.op = { kind: "del", sel: new Set() };
+      U.op = { kind: "del", sel: new Set() }; U.rem = false;
       clearTimeout(d.flashTimer);
       render();
     }
@@ -185,7 +227,7 @@
     }
     function dalStart() {
       if (!anyPat()) { flash("EMP", 900); return; }
-      U.op = { kind: "dal", on: false };
+      U.op = { kind: "dal", on: false }; U.rem = false;
       clearTimeout(d.flashTimer);
       render();
     }
@@ -197,7 +239,7 @@
     }
     function chgStart() {
       if (!anyPat()) { U.op = null; render(); flash("EMP", 900); return; }
-      U.op = { kind: "chg", from: -1, to: -1 };
+      U.op = { kind: "chg", from: -1, to: -1 }; U.rem = false;
       clearTimeout(d.flashTimer);
       render();
     }
@@ -293,7 +335,7 @@
       reset() {
         if (seq.mode !== "idle") seq.stop();
         U.stage = null; U.sel = null; U.sub = false; U.recKey = -1; U.ate.clear();
-        U.op = null; U.ers = false; U.erp.clear(); U.ersHold = false; U.ersAte.clear(); U.delDown = false;
+        U.op = null; U.ers = false; U.erp.clear(); U.ersHold = false; U.ersAte.clear(); U.delDown = false; U.rem = false;
       },
       ownsPads: () => U.ptn && (!U.stage || U.stage === "arm"),
 
@@ -303,7 +345,20 @@
           if (down && !U.stage) setPtn(!U.ptn);   // gravando: PATTERN SELECT nao sai
           return true;
         }
-        if (id === "del" && !down) { U.delDown = false; return U.ptn || !!U.stage; }
+        // Protect (ADAPTACAO; no SP-404 e ligando o aparelho, p. 43): PATTERN SELECT aceso, REMAIN segurado (os bancos
+        // mostram os protegidos) + banco A-E liga/desliga o Protect desse banco de patterns ("A.on" / "A.oF")
+        if (id === "remain") {
+          if (down && U.ptn && !U.stage && !U.op) { U.rem = true; render(); flash(protTxt(pbank()), 900); return true; }
+          if (!down && U.rem) { U.rem = false; render(); return true; }
+        }
+        if (U.rem && /^bank-[a-e]$/.test(id) && U.ptn && !U.stage && !U.op) {
+          if (down) {
+            const b = BANKS.indexOf(id.slice(5).toUpperCase());
+            if (b >= 0 && b < NB) { protToggle(b); render(); flash(protTxt(b), 900); }
+          }
+          return true;
+        }
+      if (id === "del" && !down) { U.delDown = false; return U.ptn || !!U.stage; }
         if (!(U.ptn || U.stage)) return false;
         // DEL (p. 36-37): gravando = ErS; com PATTERN SELECT = dEL; CANCEL segurado + DEL = dAL
         if (id === "del") {
@@ -476,12 +531,14 @@
         if (!(U.ptn || U.stage)) return;
         const o = U.op;
         d.led("del", !!(U.ers || (o && o.kind !== "chg")));
+        if (U.rem) d.led("remain", true);
         if (o && o.kind === "chg") d.led("rec", true);
         // os bancos mostram o banco de patterns; no dAL piscam (escolhido: todos acesos)
         for (let k = 0; k < NB; k++) {
           const id = "bank-" + BANKS[k].toLowerCase(), el = b[id];
           if (!el) continue;
           const dal = o && o.kind === "dal";
+          if (U.rem) { d.led(id, S.isProt(data(), k)); el.classList.remove("blink"); continue; }   // REMAIN segurado: os protegidos acesos
           d.led(id, dal ? o.on : (U.ptn && !U.stage) || U.stage === "arm" ? k === pbank() : k === d.st.bank);
           el.classList.toggle("blink", !!(d.on && dal && !o.on));
         }
