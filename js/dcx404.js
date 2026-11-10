@@ -508,6 +508,8 @@ window.RJ = window.RJ || {};
     /** O grafo fixo: pads e entrada no Bus 1, Mute, Bus 2, Volume e a saida do host. */
     graph(ctx) {
       if (this.g && this.g.ctx === ctx) return;
+      // aquece a saida de audio ao ligar (1 amostra muda): no celular o 1o som depois de parado costuma atrasar
+      try { const w = ctx.createBufferSource(); w.buffer = ctx.createBuffer(1, 1, ctx.sampleRate); w.connect(ctx.destination); w.start(); } catch (e) { /* sem aquecimento */ }
       const G = { ctx };
       G.pads = ctx.createGain();
       G.srcRj = ctx.createGain(); G.srcRj.gain.value = 0;

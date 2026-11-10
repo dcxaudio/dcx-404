@@ -307,7 +307,18 @@
       if (open) cfgEl.focus({ preventScroll: true });
       else if (refocus) cfgBtn.focus({ preventScroll: true });
     }
-    cfgBtn.addEventListener("click", () => panel(!cfgOpen()));
+    // Sobre: latencia do audio do aparelho (o que o navegador informa; o site gasta < 1 ms do toque ao som)
+    const latEl = document.getElementById("d4-lat");
+    function latencia() {
+      const c = host.engine && host.engine.ctx;
+      if (!c) { latEl.textContent = "Latência de áudio: ligue o aparelho (LIGAR) para medir."; return; }
+      const ms = v => (typeof v === "number" && v > 0) ? (v * 1000).toFixed(1) + " ms" : "não informado";
+      let total = "";
+      if (c.baseLatency > 0 && c.outputLatency > 0) total = " · total ≈ " + ((c.baseLatency + c.outputLatency) * 1000).toFixed(0) + " ms";
+      latEl.textContent = "Latência de áudio: base " + ms(c.baseLatency) + " · saída " + ms(c.outputLatency) + total +
+        " · " + Math.round(c.sampleRate) + " Hz · " + c.state;
+    }
+    cfgBtn.addEventListener("click", () => { panel(!cfgOpen()); if (cfgOpen()) latencia(); });
     document.addEventListener("keydown", e => { if (e.key === "Escape" && cfgOpen()) { e.preventDefault(); panel(false, true); } });
     document.addEventListener("pointerdown", e => {
       if (cfgOpen() && !cfgEl.contains(e.target) && !cfgBtn.contains(e.target)) panel(false);
