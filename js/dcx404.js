@@ -344,10 +344,12 @@ window.RJ = window.RJ || {};
         // SAMPLE EDIT (Fase 2c): CTRL 1/2/3 viram START/END/LEVEL ou TIME/BPM do pad atual (manual p. 29-33)
         "start-end": ["Start/End/Level", () => this.sedPress("se")],
         "time-bpm": ["Time/BPM", () => this.sedPress("tb")],
+        // PATTERN SEQUENCER (Fase 4): sem acao aqui; o novo/js/sequencer-ui.js recebe pelo gancho seqHook.key
+        "pattern-select": ["Pattern Select"], "length": ["Length"], "quantize": ["Quantize"],
       };
       // a pagina ainda traz REC, STEREO, REMAIN, START/END/LEVEL e TIME/BPM como teclas sem funcao (data-dead): viram teclas do motor
       // aqui, antes do solo.js ligar as data-dead (assim o HTML da face nova nao precisa mudar)
-      ["rec", "stereo", "remain", "start-end", "time-bpm", "mark"].forEach(id => {
+      ["rec", "stereo", "remain", "start-end", "time-bpm", "mark", "pattern-select", "length", "quantize"].forEach(id => {
         const el = $(`[data-dead="${id}"]`, root);
         if (el && !$(`[data-ctrl="${id}"]`, root)) { el.dataset.ctrl = id; delete el.dataset.dead; }
       });
@@ -357,7 +359,10 @@ window.RJ = window.RJ || {};
       Object.keys(BTN).forEach(id => {
         const el = $(`[data-ctrl="${id}"]`, root);
         if (!el) return;
-        const [name, down, up] = BTN[id];
+        const [name, down0, up0] = BTN[id];
+        // gancho do sequenciador (face nova): seqHook.key(id, apertou) devolve true quando a tecla e dele (o motor nao age)
+        const hk = (d, f) => () => { const q = this.seqHook; if (q && q.key(id, d)) return; if (f) f(); };
+        const down = hk(true, down0), up = hk(false, up0);
         this.btn[id] = el;
         this.btnFn[id] = { down, up };
         el.addEventListener("pointerdown", e => {
@@ -629,6 +634,11 @@ window.RJ = window.RJ || {};
       st.fxLimit = d.fxLimit === true; st.sendRet = d.sendRet !== false;
       st.lofiVar = (RJ.D4_LOFI_VARS || []).includes(d.lofiVar) ? d.lofiVar : "B";   // estado/disquete sem o campo: B (o padrao; quem ja escolheu A ou C mantem)
       this.markOp = null; this.remainHeld = null; this.preset = [null, null, null];
+      // Pattern Sequencer (so onde o js/sequencer.js esta carregado): st.seq limpo; sem o campo fica o de agora
+      // sem o js/sequencer.js (pagina estavel, Studio) o campo passa cru, para nao perder patterns de um disquete da face nova
+      const sq = d.seq !== undefined ? d.seq : this.st && this.st.seq;
+      if (RJ.D4Seq) st.seq = RJ.D4Seq.clean(sq, SLOTS, BANKS); else if (sq !== undefined) st.seq = sq;
+      if (this.seqHook) this.seqHook.reset();   // o pattern tocando/gravando era do estado antigo
       st.lofiBits = clamp(Math.round(+d.lofiBits) || RJ.D4_LOFI.bits, RJ.D4_LOFI.minBits, RJ.D4_LOFI.maxBits);
       st.lofiDown = clamp(Math.round(+d.lofiDown) || RJ.D4_LOFI.down, 1, RJ.D4_LOFI.maxDown);
       if (VELS.includes(d.vel)) st.vel = d.vel;
@@ -801,6 +811,7 @@ window.RJ = window.RJ || {};
       if (this.shift || this.shiftKey) { this.shiftUsed(); this.pickFile(i); return; }
       // MFX: [MFX] segurado + pad 1-12 = MFX 1-12 (+ [VINYL SIM] = 13-24); na janela de 5 s so os pads que piscam
       if (this.nf ? this.mfxPadTakes(t) : this.mfxPick && t < 4) { this.pickMfx(this.nf ? this.mfxPadNum(t) : t + 1); return; }
+      if (this.seqHook && this.seqHook.pad(t, i, vel)) return;   // PATTERN SELECT: o pad escolhe/toca o pattern
       if (this.remainHeld) { this.remainPick(i); return; }   // REMAIN + pad: escolhe os alvos do efeito (o pad nao toca)
       // MARK: o pad do "so o start" de novo fecha no fim do sample; outro pad desiste; MARK + pad = "so o end"
       const mo = this.markOp;
@@ -815,6 +826,7 @@ window.RJ = window.RJ || {};
       const p = this.st.pads[i];
       // Loop sem Gate: o mesmo pad de novo para o loop
       if (p.loop && !p.gate && this.voice[i]) { this.stopVoice(i); this.renderModes(); return; }
+      if (this.seqHook) this.seqHook.hit(i, vel);   // gravando pattern: a nota entra
       this.play(i, vel);
       this.renderModes();
       this.dirty();
@@ -825,6 +837,7 @@ window.RJ = window.RJ || {};
       const i = this.downSlot[t] >= 0 ? this.downSlot[t] : this.slotOf(t);
       this.downSlot[t] = -1;
       this.held.delete(i);
+      if (this.seqHook && this.seqHook.release(t, i)) return;   // o toque era do sequenciador (ou a nota gravada acabou)
       const p = this.st.pads[i];
       if (p.gate && !this.st.hold && !(this.roll && this.roll.pad === i)) {
         // Gate: soltar o pad no "so o start" fecha o end no fim do sample (manual p. 31)
@@ -864,7 +877,7 @@ window.RJ = window.RJ || {};
       src.start(t);
       this.voice[i] = v;
       src.onended = () => { if (this.voice[i] === v) { this.voice[i] = null; this.renderPads(); } g.disconnect(); if (v.w) { v.w.disconnect(); v.d.disconnect(); } };
-      const lit = () => { const el = this.elOf(i); if (this.voice[i] === v && el) el.classList.add("hit"); };
+      const lit = () => { const el = this.elOf(i); if (this.voice[i] === v && el && !this.seqPads()) el.classList.add("hit"); };
       if (t - ctx.currentTime > 0.01) setTimeout(lit, (t - ctx.currentTime) * 1000); else lit();
     }
 
@@ -877,8 +890,10 @@ window.RJ = window.RJ || {};
       else { v.g.gain.cancelScheduledValues(t); v.g.gain.setTargetAtTime(0, t, 0.003); }
       try { v.src.stop(t + 0.03); } catch (e) { /* ja parou */ }
       const el = this.elOf(i);
-      if (el) el.classList.remove("hit");
+      if (el && !this.seqPads()) el.classList.remove("hit");
     }
+    /** Os pads da tela mostram patterns (PATTERN SELECT), nao samples: as vozes nao acendem nem apagam pad. */
+    seqPads() { return !!(this.seqHook && this.seqHook.ownsPads()); }
 
     stopAll() { for (let i = 0; i < SLOTS; i++) this.stopVoice(i); this.stopRoll(); }
 
@@ -1217,6 +1232,7 @@ window.RJ = window.RJ || {};
     lofiPage() { return !this.setup && (this.shift || this.shiftKey) && !this.sendPage(); }
 
     ctrlGet(k) {
+      if (this.seqHook) { const q = this.seqHook.ctrl(k); if (q !== undefined) return q; }   // LENGTH/QUANTIZE/metronomo + CTRL 3
       if (this.smp && k === 2) return this.st.inLevel;   // REC: o CTRL 3 e o nivel da entrada (manual p. 23), mesmo com REMAIN segurado
       if (k === 2 && this.lofiVarTurn()) return (this.lofiVarRaw != null && this.lofiVarAt(this.lofiVarRaw) === this.lofiVar()) ? this.lofiVarRaw : RJ.D4_LOFI_VARS.indexOf(this.lofiVar()) / 2;
       if (k === 2 && this.mfxChoosing()) {   // [MFX] + CTRL 3: a posicao do numero escolhido (ou do MFX atual)
@@ -1240,6 +1256,7 @@ window.RJ = window.RJ || {};
     }
 
     ctrlSet(k, v) {
+      if (this.seqHook && this.seqHook.ctrl(k, v) !== undefined) return;
       // REC: o CTRL 3 e o nivel da entrada, mesmo com REMAIN segurado
       if (this.smp && k === 2) { this.st.inLevel = v; this.applyInput(); this.flash(String(Math.round(v * 127)), "pad"); return; }
       // face nova, Lo-Fi (MFX 14) ligado: [CANCEL] segurado + CTRL 3 escolhe a variante A/B/C (visor "LF.A"/"LF.b"/"LF.C")
@@ -1475,7 +1492,8 @@ window.RJ = window.RJ || {};
       if (this.sed && this.sed.mode === mode) { this.sedExit(); return; }
       // face nova (o Set-up saiu): TIME/BPM sem sample para medir (pad atual vazio, ou SOURCE aceso e nada tocando) e o
       // BPM do 404 no CTRL 2 (manual p. 45 e 14/34); START/END/LEVEL com SOURCE aceso: o CTRL 3 e o nivel da fonte (p. 17)
-      const glob = this.nf && mode === "tb" && (!this.buf[this.st.cur] || (this.src !== "off" && !this.playing()));
+      // com PATTERN SELECT aceso (ou gravando pattern), TIME/BPM e sempre o BPM do 404 (p. 34)
+      const glob = this.nf && mode === "tb" && (!this.buf[this.st.cur] || (this.src !== "off" && !this.playing()) || !!(this.seqHook && this.seqHook.ptn()));
       if (!this.buf[this.st.cur] && !glob && !(mode === "se" && this.srcLevelOn())) { this.flash("EMP", "pad"); return; }
       if (this.setup) this.toggleSetup(false);
       this.endMfxPick();
@@ -1677,12 +1695,15 @@ window.RJ = window.RJ || {};
      *  voltam ao de antes), DEL, SAMPLE EDIT e, por fim, a preselecao guardada. Visor "---". Nao para o REC gravando
      *  nem o Resample, e nao mexe no sequenciador (o "PATTERN STOP" do painel e da Fase 4). */
     cancelPress() {
+      if (this.seqHook && this.seqHook.tap && this.seqHook.tap()) return;   // face nova: CANCEL 4x rapido silencia tudo (p. 8)
+      if (this.seqHook && this.seqHook.cancel(false)) return;   // gravando/esperando pattern: CANCEL para e salva (p. 35)
       if (this.smp && this.smp.stage !== "rec") this.cancelSmp();
       else if (this.markOp) this.cancelMark();
       else if (this.remainHeld) this.cancelRemain();
       else if (this.delMode) this.cancelDel();
       else if (this.sed) { this.sedExit(); this.flash("---", "pad", 500); }
       else if (this.preset.some(v => v != null)) { this.preset = [null, null, null]; this.flash("---", "fx", 500); }
+      else if (this.seqHook) this.seqHook.cancel(true);   // nada mais em curso: PATTERN STOP (p. 34)
     }
 
     /* =========================================================== REC, STEREO e REMAIN (face nova, manual p. 14, 23-28) */
@@ -2167,6 +2188,7 @@ window.RJ = window.RJ || {};
     /** O normal: no Set-up, o BPM; com efeito no bus escolhido, "F.0n"; senao o BPM. */
     showBase() {
       if (!this.el) return;
+      if (this.seqHook && this.seqHook.display()) return;   // Ptn, contagem, rEC/rEH, LENGTH/QUANTIZE
       if (this.rec) { this.drawDisplay("rEC", "pad"); return; }
       // REC: gravando "rEC"; em espera, o tempo livre no modo escolhido (STEREO = metade)
       if (this.smp) { this.drawDisplay(this.smp.stage === "rec" ? "rEC" : this.remainShow(this.memLeft(this.recCh())), "pad"); return; }
@@ -2257,6 +2279,7 @@ window.RJ = window.RJ || {};
         const el = this.btn[id];
         el.classList.toggle("down", held(el));
       });
+      if (this.seqHook) this.seqHook.renderButtons();   // PATTERN SELECT, REC, LENGTH, QUANTIZE
       this.renderBlink();   // led() acabou de redesenhar o .lit: o pisca do TAP e do ultimo efeito volta por cima
       // entrada
       const srcs = this.sources();
@@ -2299,6 +2322,7 @@ window.RJ = window.RJ || {};
         el.title = this.st.pads[i].name || "";
         el.setAttribute("aria-label", "Pad " + this.padLabel(i) + (this.st.pads[i].name ? ": " + this.st.pads[i].name : this.buf[i] ? "" : " (vazio)"));
       });
+      if (this.seqHook) this.seqHook.renderPads(this.padEls);   // PATTERN SELECT: os pads mostram os patterns
     }
 
     renderCaps() {

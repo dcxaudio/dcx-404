@@ -184,12 +184,13 @@
         const { data, from } = await RJ.d4Open.parse(f);
         if (!host.on) on();                       // o arquivo escolhido ou solto vale como o toque de ligar
         await until(() => d404.loaded, 15000);    // o estado guardado ja entrou: o disquete vem por cima
-        if (d404.buf.some(Boolean) && !(await ask("Abrir o " + from + " troca os pads e efeitos desta pagina (a versao estavel nao muda). Continuar?"))) { say("Nada mudou."); return; }
+        const hasPats = !!(d404.st.seq && d404.st.seq.pats && Object.keys(d404.st.seq.pats).length);
+        if ((d404.buf.some(Boolean) || hasPats) && !(await ask("Abrir o " + from + " troca os pads e efeitos desta pagina (a versao estavel nao muda). Continuar?"))) { say("Nada mudou."); return; }
         const r = RJ.d4Open.apply(d404, data, d404.engine.ensure());
         say((from === "projeto" ? "Projeto aberto (disquete do 404): " : "Disquete aberto: ") +
           (r.pads ? r.pads + (r.pads === 1 ? " pad" : " pads") + " em " + r.banks.join(", ") : "sem samples") + ", efeitos e volume." +
           (r.bad ? " " + r.bad + " sample(s) ilegivel(is) ficaram vazios." : "") +
-          (r.extra ? " " + r.extra + " pad(s) a mais que 60 ficaram de fora." : ""));
+          (r.extra ? " " + r.extra + " pad(s) a mais que 60 ficaram de fora." : "") + RJ.d4Open.seqMsg(r));
       } catch (e) {
         console.warn(e);
         say(e.message || "Nao deu para abrir esse arquivo.", true);
