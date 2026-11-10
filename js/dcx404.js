@@ -86,6 +86,7 @@ window.RJ = window.RJ || {};
     "A": "abcefg", "C": "adef", "L": "def", "U": "bcdef", "u": "cde", "n": "ceg", "o": "cdeg", "i": "e", "t": "defg",
     "H": "bcefg", "h": "cefg", "y": "bcdfg", "S": "afgcd", "c": "deg", "_": "d",
     "M": "abcef",     // M (do "EMP"): o arco de 7 segmentos, como nos visores da Boss
+    "q": "abcfg",     // q (Frq do Wah e do Ring Mod)
     "V": "bcdef" };   // V (drV, LEV): em 7 segmentos e o U
   // o digito do visor da face nova (Figma, "Digito de sete segmentos", 39 x 63)
   const DCX_SEG = {
@@ -1104,7 +1105,7 @@ window.RJ = window.RJ || {};
     /** CTRL 3 com [MFX] segurado (ou na janela de 5 s): escolhe o numero 1-24 (25 = Stopper, extra); o visor mostra. */
     mfxKnob(v) {
       const k = clamp(1 + Math.round(v * (RJ.D4FX.MFX_MAX - 1)), 1, RJ.D4FX.MFX_MAX);
-      this.mfxSel = k;
+      this.mfxSel = k; this.mfxRaw = v;   // a posicao exata do knob: a roda e as setas andam 0,02 por vez, menos que um numero (1/24)
       if (this.press && this.press.name === "mfx") this.press.used = true;
       this.flash(k > 24 ? "StP" : String(k), "fx", 1500);
       this.renderMfxList();
@@ -1204,6 +1205,8 @@ window.RJ = window.RJ || {};
       if (this.smp && k === 2) return this.st.inLevel;   // REC: o CTRL 3 e o nivel da entrada (manual p. 23), mesmo com REMAIN segurado
       if (k === 2 && this.mfxChoosing()) {   // [MFX] + CTRL 3: a posicao do numero escolhido (ou do MFX atual)
         const d = RJ.D4FX.byId(this.st.mfx), n = this.mfxSel != null ? this.mfxSel : d && d.m ? d.m : 1;
+        // girando: a posicao exata (senao cada passo pequeno arredondava de volta ao mesmo numero e a roda ficava parada)
+        if (this.mfxSel != null && this.mfxRaw != null && 1 + Math.round(this.mfxRaw * (RJ.D4FX.MFX_MAX - 1)) === n) return this.mfxRaw;
         return (n - 1) / (RJ.D4FX.MFX_MAX - 1);
       }
       if (this.remainHeld && !this.setup) { const f = this.curFx(); return this.preset[k] != null ? this.preset[k] : f ? this.st.params[f.id][this.pk(f, k)] : 0.5; }

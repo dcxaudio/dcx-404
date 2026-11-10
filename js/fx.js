@@ -443,6 +443,137 @@ window.RJ = window.RJ || {};
   }
   registerProcessor("d4-pitch", D4Pitch);
 
+  /* MFX da Onda 2 (face nova): Chorus, Flanger, Phaser, Tremolo/Pan, Wah e Ring Mod num processador so (codigo proprio).
+     processorOptions.mode: 0 chorus, 1 flanger, 2 phaser, 3 tremolo/pan, 4 wah, 5 ring mod.
+     p0-p3 ja chegam em unidades fisicas (o mapa 0-1 -> unidade esta fora, em RJ.d4Mfx, e os testes leem o mesmo):
+       chorus  p0 profundidade (ms), p1 taxa (Hz), p2 mix (0 direto - 1 efeito)
+       flanger p0 largura da varredura (ms), p1 taxa (Hz), p2 mix, p3 realimentacao (0-0,9)
+       phaser  p0 varredura (oitavas acima de 180 Hz), p1 taxa (Hz), p2 mix, p3 realimentacao
+       tremolo p0 profundidade (0-1), p1 taxa (Hz), p2 forma (0-1 do Ctrl 3: < 0,5 tremolo, >= 0,5 pan; longe do centro = mais quadrada)
+       wah     p0 sensibilidade (oitavas por unidade de envelope), p1 frequencia de base (Hz), p2 Q
+       ring    p0 frequencia da portadora (Hz), p1 sensibilidade (oitavas por unidade de envelope), p2 mix
+     Os valores andam com uma rampa de ~10 ms por amostra (sem degrau). Quando "rst" muda, zera linhas, filtros e envelope
+     (o efeito liga sem o resto da ultima vez). O molhado das modulacoes com realimentacao passa por um teto suave (pico 1). */
+  class D4Mfx extends AudioWorkletProcessor {
+    static get parameterDescriptors() { return ["p0", "p1", "p2", "p3", "rst"].map(name => ({ name, defaultValue: 0, automationRate: "k-rate" })); }
+    constructor(o) {
+      super();
+      this.mode = (o && o.processorOptions && o.processorOptions.mode) | 0;
+      this.N = 4096; this.M = 4095;                      // linha de atraso: 85 ms a 48 kHz (chorus ate ~25 ms)
+      while (this.N < sampleRate * 0.06) { this.N *= 2; } this.M = this.N - 1;
+      this.buf = [new Float32Array(this.N), new Float32Array(this.N)];
+      this.ap = [new Float64Array(12), new Float64Array(12)];   // phaser: x1/y1 de 6 estagios por canal
+      this.fbv = [0, 0];                                         // phaser: a ultima saida (realimentacao)
+      this.ic = [[0, 0], [0, 0]];                                // wah: estados do filtro (TPT SVF)
+      this.w = 0; this.ph = 0; this.cph = 0; this.env = 0; this.s = null;
+      this.k = 1 - Math.exp(-1 / (0.01 * sampleRate));
+      this.ea = 1 - Math.exp(-1 / (0.003 * sampleRate)); this.er = 1 - Math.exp(-1 / (0.12 * sampleRate));
+      this.rs = 0;
+    }
+    reset() {
+      this.buf[0].fill(0); this.buf[1].fill(0); this.ap[0].fill(0); this.ap[1].fill(0);
+      this.fbv = [0, 0]; this.ic = [[0, 0], [0, 0]]; this.env = 0; this.ph = 0; this.cph = 0;
+    }
+    static soft(x) {   // teto suave: igual ate 0,8, depois curva ate 1
+      const a = x < 0 ? -x : x;
+      if (a <= 0.8) return x;
+      const y = 0.8 + 0.2 * Math.tanh((a - 0.8) / 0.2);
+      return x < 0 ? -y : y;
+    }
+    rd(b, d) {          // leitura com interpolacao linear, d amostras atras de w
+      const p = this.w - d, i = Math.floor(p), f = p - i, M = this.M;
+      const a = b[i & M]; return a + (b[(i + 1) & M] - a) * f;
+    }
+    process(inputs, outputs, P) {
+      const inp = inputs[0] || [], out = outputs[0], n = out[0].length, sr = sampleRate, mode = this.mode;
+      if (P.rst[0] !== this.rs) { this.rs = P.rst[0]; this.reset(); }   // "rst" mudou: zera no comeco deste bloco (no tempo certo)
+      const T = [P.p0[0], P.p1[0], P.p2[0], P.p3[0]];
+      for (let i = 0; i < 4; i++) if (!(T[i] > -1e6 && T[i] < 1e6)) T[i] = 0;
+      if (!this.s) this.s = T.slice();
+      const s = this.s, k = this.k, soft = D4Mfx.soft, TAU = 2 * Math.PI;
+      const L = inp[0] || [], R = inp[1] || inp[0] || [];
+      for (let j = 0; j < n; j++) {
+        for (let i = 0; i < 4; i++) s[i] += (T[i] - s[i]) * k;
+        let xl = L[j] || 0, xr = R[j] || 0;
+        if (!(xl > -8 && xl < 8)) xl = 0;
+        if (!(xr > -8 && xr < 8)) xr = 0;
+        let yl = xl, yr = xr;
+        if (mode === 0) {                     // CHORUS: duas leituras moduladas, L e R em quadratura; sem realimentacao
+          const dep = s[0] * 0.001 * sr, base = 0.008 * sr + dep, mix = s[2];
+          const dl = base + dep * Math.sin(TAU * this.ph), dr = base + dep * Math.sin(TAU * (this.ph + 0.25));
+          const b0 = this.buf[0], b1 = this.buf[1], wi = this.w & this.M;
+          b0[wi] = xl; b1[wi] = xr;
+          yl = (1 - mix) * xl + mix * this.rd(b0, dl);
+          yr = (1 - mix) * xr + mix * this.rd(b1, dr);
+          this.ph += s[1] / sr;
+        } else if (mode === 1) {              // FLANGER: atraso curto varrido (0,3 ms ate 0,3 + largura) com realimentacao
+          const wd = s[0] * 0.001 * sr, d = 0.0003 * sr + wd * 0.5 * (1 - Math.cos(TAU * this.ph));
+          const fb = s[3], mix = s[2], nm = Math.sqrt(1 - fb * fb), b0 = this.buf[0], b1 = this.buf[1], wi = this.w & this.M;
+          const wl = this.rd(b0, d), wr = this.rd(b1, d);
+          let ul = xl + fb * wl, ur = xr + fb * wr;
+          b0[wi] = ul > -1e-20 && ul < 1e-20 ? 0 : ul; b1[wi] = ur > -1e-20 && ur < 1e-20 ? 0 : ur;
+          // o molhado e so a linha (todo a direita some o direto, manual p. 19); no meio direto + linha = o pente do flanger
+          yl = (1 - mix) * xl + mix * soft(wl * nm);
+          yr = (1 - mix) * xr + mix * soft(wr * nm);
+          this.ph += s[1] / sr;
+        } else if (mode === 2) {              // PHASER: 6 passa-tudo de 1a ordem varridos em escala log, realimentacao da saida
+          const fc = Math.min(0.45 * sr, 180 * Math.pow(2, s[0] * 0.5 * (1 - Math.cos(TAU * this.ph))));
+          const t = Math.tan(Math.PI * fc / sr), a = (t - 1) / (t + 1);
+          const fb = s[3], mix = s[2], nm = Math.sqrt(1 - fb * fb);
+          for (let c = 0; c < 2; c++) {
+            const z = this.ap[c], x = c ? xr : xl;
+            let v = x + fb * this.fbv[c];
+            for (let g = 0; g < 6; g++) {
+              const y = a * v + z[2 * g] - a * z[2 * g + 1];
+              z[2 * g] = v; z[2 * g + 1] = y > -1e-20 && y < 1e-20 ? 0 : y; v = z[2 * g + 1];
+            }
+            this.fbv[c] = v;
+            const y = (1 - mix) * x + mix * soft(v * nm);   // como no flanger: no meio direto + passa-tudo = os vales
+            if (c) yr = y; else yl = y;
+          }
+          this.ph += s[1] / sr;
+        } else if (mode === 3) {              // TREMOLO / PAN: LFO seno que fica quadrado longe do centro do Ctrl 3
+          const sh = s[2], q = Math.abs(sh - 0.5) * 2, kk = 0.05 + 11.95 * q * q;
+          const lf = Math.tanh(kk * Math.sin(TAU * this.ph)) / Math.tanh(kk), dep = s[0];
+          // tremolo (esquerda) e pan (direita); perto do centro (0,47-0,53) os dois cruzam: girar por cima nao da degrau
+          const wp = Math.max(0, Math.min(1, (sh - 0.47) / 0.06)), g = 1 - dep * 0.5 * (1 + lf), p = dep * lf;
+          yl = xl * ((1 - wp) * g + wp * Math.min(1, 1 - p)); yr = xr * ((1 - wp) * g + wp * Math.min(1, 1 + p));
+          this.ph += s[1] / sr;
+        } else if (mode === 4) {              // WAH: passa-banda ressonante (SVF) cuja frequencia sobe com o envelope
+          const ax = Math.max(xl < 0 ? -xl : xl, xr < 0 ? -xr : xr);
+          this.env += (ax - this.env) * (ax > this.env ? this.ea : this.er);
+          if (this.env < 1e-12) this.env = 0;
+          const fc = Math.min(Math.min(8000, 0.45 * sr), s[1] * Math.pow(2, Math.min(5, s[0] * this.env)));
+          const g = Math.tan(Math.PI * fc / sr), kq = 1 / Math.max(0.5, s[2]);
+          const a1 = 1 / (1 + g * (g + kq)), a2 = g * a1, a3 = g * a2, mk = 1 + 0.15 * s[2];
+          for (let c = 0; c < 2; c++) {
+            const z = this.ic[c], x = c ? xr : xl;
+            const v3 = x - z[1], v1 = a1 * z[0] + a2 * v3, v2 = z[1] + a2 * z[0] + a3 * v3;
+            z[0] = 2 * v1 - z[0]; z[1] = 2 * v2 - z[1];
+            if (z[0] > -1e-20 && z[0] < 1e-20) z[0] = 0;
+            if (z[1] > -1e-20 && z[1] < 1e-20) z[1] = 0;
+            const y = soft(kq * v1 * mk);
+            if (c) yr = y; else yl = y;
+          }
+        } else {                              // RING MOD: entrada x seno da portadora; a frequencia sobe com o envelope (SEn)
+          const ax = Math.max(xl < 0 ? -xl : xl, xr < 0 ? -xr : xr);
+          this.env += (ax - this.env) * (ax > this.env ? this.ea : this.er);
+          if (this.env < 1e-12) this.env = 0;
+          const f = Math.min(0.45 * sr, s[0] * Math.pow(2, Math.min(4, s[1] * this.env)));
+          const cr = Math.sin(TAU * this.cph), mix = s[2];
+          yl = (1 - mix) * xl + mix * xl * cr; yr = (1 - mix) * xr + mix * xr * cr;
+          this.cph += f / sr; if (this.cph >= 1) this.cph -= 1;
+        }
+        if (this.ph >= 1) this.ph -= 1;
+        this.w++;
+        out[0][j] = yl;
+        if (out[1]) out[1][j] = yr;
+      }
+      return true;
+    }
+  }
+  registerProcessor("d4-mfx", D4Mfx);
+
   /* Gravador do Resample: manda blocos de ~0,1 s pela porta enquanto grava. */
   class D4Rec extends AudioWorkletProcessor {
     constructor() {
@@ -801,6 +932,106 @@ window.RJ = window.RJ || {};
     };
   }
 
+  /* ---------------------------------------------------------------- Onda 2 (face nova): MFX 3-10 e 18 */
+
+  /** O mapa 0-1 -> unidade de cada Ctrl dos MFX da Onda 2 (o worklet d4-mfx recebe ja na unidade; os testes leem daqui). */
+  RJ.d4Mfx = {
+    chorus: { depth: v => 5 * v, rate: v => exp(v, 0.1, 8), mix: v => v },                           // ms, Hz
+    flanger: { width: v => 0.2 + 7.8 * v, fb: v => 0.85 * v, rate: v => exp(v, 0.05, 8), mix: v => v }, // d-r: largura e ressonancia juntas
+    phaser: { oct: v => 1 + 4.5 * v, fb: v => 0.75 * v, rate: v => exp(v, 0.05, 8), mix: v => v },
+    tremolo: { depth: v => v, rate: v => exp(v, 0.3, 15) },
+    wah: { sens: v => 6 * v, freq: v => exp(v, 300, 2500), q: v => 0.7 + 11 * v * v },
+    ring: { freq: v => exp(v, 20, 2000), sens: v => 8 * v, mix: v => v },
+    // drives: ganho antes da curva (Ctrl 1), passa-baixa do tom (Ctrl 2, Hz) e nivel (Ctrl 3: 0,7 = mesmo nivel)
+    drive: {
+      od: { pre: v => exp(v, 1, 25), tone: v => exp(v, 1200, 16000) },
+      dist: { pre: v => exp(v, 2, 150), tone: v => exp(v, 800, 12000) },
+      fuzz: { pre: v => exp(v, 3, 300), tone: v => exp(v, 800, 12000) },
+      level: v => 1.4 * v,
+    },
+  };
+  const MX = RJ.d4Mfx;
+
+  /** Um MFX do worklet d4-mfx. map[i] = a lista de [parametro, funcao 0-1 -> unidade] que o Ctrl i move. */
+  function modFx(mode, map) {
+    return function (ctx) {
+      const node = new AudioWorkletNode(ctx, "d4-mfx", {
+        numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2],
+        channelCount: 2, channelCountMode: "explicit", channelInterpretation: "speakers",
+        processorOptions: { mode },
+      });
+      const P = k => node.parameters.get(k);
+      let rst = 0, offAt = -1;
+      return {
+        input: node, output: node,
+        set(i, v) { (map[i] || []).forEach(([k, f]) => P(k).setValueAtTime(f(clamp(v, 0, 1)), ctx.currentTime)); },
+        // ao entrar no bus: linhas, filtros e envelope zerados (nada da ultima vez) e o LFO do comeco. O D4Slot so abre o
+        // molhado 15 ms depois, entao o zero cai com ele fechado. Religado em menos de 0,1 s (o D4Slot so desliga a saida velha aos 0,12 s) o molhado velho ainda esta
+        // sumindo: ai nao zera (seria um degrau nele)
+        active(a) {
+          if (!a) { offAt = ctx.currentTime; return; }
+          if (offAt < 0 || ctx.currentTime - offAt > 0.1) P("rst").setValueAtTime(++rst, ctx.currentTime);
+        },
+      };
+    };
+  }
+  /** 3. Chorus: DEPTH (dBt), RATE (rAt), BALANCE (o manual nao da codigo). */
+  const chorus = modFx(0, [[["p0", MX.chorus.depth]], [["p1", MX.chorus.rate]], [["p2", MX.chorus.mix]]]);
+  /** 4. Flanger (Send/Return ligado, o de fabrica, manual p. 19): DEPTH/RESONANCE (d-r) juntos, RATE (rAt), BALANCE (bAL). */
+  const flanger = modFx(1, [[["p0", MX.flanger.width], ["p3", MX.flanger.fb]], [["p1", MX.flanger.rate]], [["p2", MX.flanger.mix]]]);
+  /** 5. Phaser: o mesmo mapa do Flanger. */
+  const phaser = modFx(2, [[["p0", MX.phaser.oct], ["p3", MX.phaser.fb]], [["p1", MX.phaser.rate]], [["p2", MX.phaser.mix]]]);
+  /** 6. Tremolo/Pan: DEPTH (dPt), RATE (rAt), WAVEFORM (trM/PAn: esquerda tremolo, direita pan; nas pontas quadrada). */
+  const tremolo = modFx(3, [[["p0", MX.tremolo.depth]], [["p1", MX.tremolo.rate]], [["p2", v => v]]]);
+  /** 10. Wah: SENS (SnS), FREQUENCY (Frq), RESONANCE (rES). Insercao (sem balance, como no manual). */
+  const wah = modFx(4, [[["p0", MX.wah.sens]], [["p1", MX.wah.freq]], [["p2", MX.wah.q]]]);
+  /** 18. Ring Mod: FREQUENCY (Frq), SENS (SEn: a portadora sobe com o volume), BALANCE (bAL). */
+  const ringmod = modFx(5, [[["p0", MX.ring.freq]], [["p1", MX.ring.sens]], [["p2", MX.ring.mix]]]);
+
+  // as curvas dos drives (entrada -4..4); o WaveShaper prende o que passa de 4 na ponta (ja saturada)
+  const DRIVE_CURVE = {
+    od: x => Math.tanh(x),                                              // suave, simetrica (harmonicos impares)
+    dist: x => x / Math.pow(1 + Math.pow(Math.abs(x), 5), 0.2),         // joelho duro
+    fuzz: x => { const b = 0.35; return Math.tanh(2 * (x + b)) - Math.tanh(2 * b); },   // assimetrica (pares e impares)
+  };
+  RJ.d4DriveCurve = DRIVE_CURVE;
+  /** 7-9. Distortion, Overdrive, Fuzz: DRIVE (drV), TONE (ton), LEVEL (LEV). Insercao.
+   *  ganho -> WaveShaper (4x) -> passa-altas 20 Hz (o Fuzz cria DC) -> passa-baixa do tom -> compensacao -> nivel.
+   *  A compensacao deixa um seno de -9 dB (0,35) com o mesmo pico com qualquer DRIVE (o volume nao pula). */
+  function driveFx(kind) {
+    const F = DRIVE_CURVE[kind], Mk = MX.drive[kind];
+    let peak = 0;   // o maior |curva| na faixa: a curva sai normalizada (pico 1)
+    for (let i = 0; i <= 800; i++) peak = Math.max(peak, Math.abs(F(-4 + i / 100)));
+    const curve = new Float32Array(4097);
+    for (let i = 0; i < curve.length; i++) curve[i] = F((i / 2048 - 1) * 4) / peak;
+    // o pico a pico de um seno de 0,35 depois da curva, sobre 2: o ganho que devolve 0,35
+    const comp = g => { const x = Math.min(4, 0.35 * g), y = (F(x) - F(-x)) / 2 / peak; return 0.35 / Math.max(1e-3, y); };
+    return function (ctx) {
+      const input = ctx.createGain(), output = ctx.createGain();
+      const pre = ctx.createGain(), sh = ctx.createWaveShaper(), dc = ctx.createBiquadFilter(), lp = ctx.createBiquadFilter(), post = ctx.createGain();
+      sh.curve = curve; sh.oversample = "4x";
+      dc.type = "highpass"; dc.frequency.value = 20; dc.Q.value = -3.01;   // Q em dB: Butterworth
+      lp.type = "lowpass"; lp.Q.value = -3.01;
+      input.connect(pre).connect(sh).connect(dc).connect(lp).connect(post).connect(output);
+      const seen = [false, false, false];
+      // o primeiro valor de cada Ctrl (na criacao) entra direto; depois desliza
+      const put = (i, p, v, tc) => { if (seen[i]) glide(p, v, ctx, tc); else { hold(p, ctx.currentTime); p.setValueAtTime(v, ctx.currentTime); } };
+      return {
+        input, output,
+        set(i, v) {
+          v = clamp(v, 0, 1);
+          // o WaveShaper le -1..1 como -4..4: o ganho entra dividido por 4
+          if (i === 0) { const g = Mk.pre(v); put(0, pre.gain, g / 4); put(0, post.gain, comp(g)); }
+          if (i === 1) put(1, lp.frequency, Mk.tone(v), 0.01);
+          if (i === 2) put(2, output.gain, MX.drive.level(v));
+          if (i < 3) seen[i] = true;
+        },
+      };
+    };
+  }
+  const distortion = driveFx("dist"), overdrive = driveFx("od"), fuzz = driveFx("fuzz");
+  const showTrem = v => (v < 0.5 ? "trM" : "PAn");
+
   // visor da face nova: o valor do Ctrl como o manual mostra (p. 20-22); null = 0-127
   const showDelayNf = (v, bpm) => DELAY_NF_SHOW[delayNfIdx(v, bpm)];
   const showSemi = v => String(pitchSemi(v));
@@ -826,6 +1057,16 @@ window.RJ = window.RJ || {};
     // Vinyl: na face nova o Ctrl 1 e o COMPRESSOR (parametro 3); a faixa (0) fica no valor guardado
     { id: "vinyl", n: 4, dir: 5, name: "Vinyl Sim", caps: ["Freq", "Noise", "Wow"], codes: ["CMP", "noS", "FLu"], nfK: [3, 1, 2], def: [0.45, 0.35, 0.3, 0.5], make: vinyl },
     { id: "reverb", n: 6, m: 1, name: "Reverb", caps: ["Time", "Tone", "Level"], codes: ["tiM", "ton", "bAL"], def: [0.5, 0.6, 0.45], make: reverb, mfx: 1 },
+    // Onda 2 (so a face nova: sem n nem mfx, a estavel nao os ve). Flanger e Phaser no mapa do Send/Return ligado (o de fabrica)
+    { id: "chorus", m: 3, name: "Chorus", caps: ["Depth", "Rate", "Balance"], codes: ["dBt", "rAt", null], def: [0.5, 0.3, 0.5], make: chorus, worklet: true },
+    { id: "flanger", m: 4, name: "Flanger", caps: ["Depth/Reso", "Rate", "Balance"], codes: ["d-r", "rAt", "bAL"], def: [0.5, 0.35, 0.5], make: flanger, worklet: true },
+    { id: "phaser", m: 5, name: "Phaser", caps: ["Depth/Reso", "Rate", "Balance"], codes: ["d-r", "rAt", "bAL"], def: [0.5, 0.35, 0.5], make: phaser, worklet: true },
+    { id: "tremolo", m: 6, name: "Tremolo/Pan", caps: ["Depth", "Rate", "Waveform"], codes: ["dPt", "rAt", null], show: [null, null, showTrem], def: [0.7, 0.45, 0.25], make: tremolo, worklet: true },
+    { id: "distortion", m: 7, name: "Distortion", caps: ["Drive", "Tone", "Level"], codes: ["drV", "ton", "LEV"], def: [0.5, 0.5, 0.7], make: distortion },
+    { id: "overdrive", m: 8, name: "Overdrive", caps: ["Drive", "Tone", "Level"], codes: ["drV", "ton", "LEV"], def: [0.4, 0.6, 0.7], make: overdrive },
+    { id: "fuzz", m: 9, name: "Fuzz", caps: ["Drive", "Tone", "Level"], codes: ["drV", "ton", "LEV"], def: [0.5, 0.5, 0.7], make: fuzz },
+    { id: "wah", m: 10, name: "Wah", caps: ["Sens", "Freq", "Reso"], codes: ["SnS", "Frq", "rES"], def: [0.6, 0.3, 0.5], make: wah, worklet: true },
+    { id: "ringmod", m: 18, name: "Ring Mod", caps: ["Freq", "Sens", "Balance"], codes: ["Frq", "SEn", "bAL"], def: [0.4, 0, 0.75], make: ringmod, worklet: true },
     { id: "comp", n: 8, m: 12, name: "Compressor", caps: ["Sustain", "Attack", "Level"], codes: ["SuS", "Att", "LEV"], def: [0.5, 0.3, 0.4], make: compressor, mfx: 3 },
     // Lo-fi: os parametros sao Bits, Rate, Tone (a estavel); na face nova o Ctrl 1 e SAMPLE RATE e o 2 e BIT, como no manual
     { id: "lofi", n: 7, m: 14, name: "Lo-fi", caps: ["Bits", "Rate", "Tone"], codes: ["rAt", "bit", "FLt"], show: [null, v => String(lofiBits(v)), null], nfK: [1, 0, 2], def: [0.55, 0.35, 0.6], make: lofi, mfx: 2, worklet: true },
