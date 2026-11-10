@@ -453,7 +453,7 @@ window.RJ = window.RJ || {};
       if (!el) return;
       const draw = () => el.style.setProperty("--a", (-135 + get() * 270) + "deg");
       const put = v => { if (!this.host.on) return; set(clamp(v, 0, 1)); draw(); this.dirty(); };
-      this.knobs[id] = { el, draw };
+      this.knobs[id] = { el, draw, release };   // release: para o teclado (novo/js/teclado.js) soltar como o dedo
       this.host.learn.add(id, el, name, "value", { get, set: put });
       let y0 = 0, v0 = 0;
       el.addEventListener("pointerdown", e => { e.preventDefault(); el.setPointerCapture(e.pointerId); y0 = e.clientY; v0 = get(); el.dataset.drag = "1"; });
