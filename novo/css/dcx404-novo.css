@@ -198,6 +198,7 @@ body.learning .dx [data-learn] { outline: 1px dashed rgba(75, 138, 208, .8); out
 .d4-toast.ask p { margin: 0 0 10px; }
 .d4-toast.ask button { font: inherit; padding: 6px 16px; margin: 0 6px; border-radius: 4px; border: 1px solid #222321; background: #adb1b5; cursor: pointer; }
 .d4-toast[hidden] { display: none; }
+.power-note { margin: -6px 0 0; max-width: 90vw; text-align: center; color: #d2d2d2; font: 11px/1.5 system-ui, sans-serif; }
 .d4-power-open { margin-top: 6px; padding: 8px 16px; border-radius: 4px; border: 1px solid rgba(255,255,255,.35); background: transparent; color: #ddd; font: 14px system-ui, sans-serif; cursor: pointer; }
 
 /* ---------------------------------------------------------------- teclado do computador (novo/js/teclado.js) */

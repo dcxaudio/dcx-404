@@ -116,6 +116,16 @@
 
     // tela de ligar: o navegador so libera o som depois de um toque
     const power = document.getElementById("power");
+    // aviso "sem vinculo" (provisorio; trocar pelo texto final do Marketing). Marcas citadas so como referencia.
+    const AVISO_SEM_VINCULO = [
+      "Projeto independente, sem vínculo com E-mu, Roland, Akai ou Mackie.",
+      "Independent project, not affiliated with E-mu, Roland, Akai or Mackie."
+    ];
+    const aviso = document.createElement("p");
+    aviso.className = "power-note";
+    AVISO_SEM_VINCULO.forEach((t, i) => { if (i) aviso.appendChild(document.createElement("br")); aviso.appendChild(document.createTextNode(t)); });
+    const hint = power.querySelector(".power-hint");
+    if (hint) hint.after(aviso); else power.appendChild(aviso);
     const on = () => { host.power(); power.classList.add("off"); };
     document.getElementById("power-btn").addEventListener("click", on);
 
