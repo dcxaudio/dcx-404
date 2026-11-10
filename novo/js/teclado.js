@@ -254,10 +254,27 @@
         if (!cap) { cap = document.createElement("span"); cap.className = "dx-keycap"; cap.setAttribute("aria-hidden", "true"); t.el.appendChild(cap); }
         cap.textContent = keys.map(c => this.label(c)).join(isValue(t) ? "/" : " ");
       });
+      this.cssGuard();
       if (this.btn) {
         this.btn.classList.toggle("on", this.show);
         this.btn.setAttribute("aria-pressed", this.show ? "true" : "false");
       }
+    },
+    /**
+     * O navegador pode ter um dcx404-novo.css velho, sem as regras da legenda: a <span> ficaria
+     * solta no canto do knob, atras das imagens (o que Igor viu). Nesse caso, as regras minimas vao aqui.
+     */
+    cssGuard() {
+      const cap = this.root.querySelector(".dx-keycap");
+      if (!cap || document.getElementById("d4-keycap-css") || getComputedStyle(cap).position === "absolute") return;
+      const st = document.createElement("style");
+      st.id = "d4-keycap-css";
+      st.textContent = ".dx-keycap{display:none;position:absolute;z-index:4;right:1px;top:1px;padding:0 2px;border-radius:2px;background:#f1f2e8;color:#262a40;" +
+        "font:700 8px/9px sans-serif;white-space:nowrap;pointer-events:none}.dx.keys-on .dx-keycap{display:block}" +
+        ".dx-knob .dx-keycap{right:auto;left:97px;top:37px;padding:0 3px;font-size:9px;line-height:13px;box-shadow:0 0 0 1px rgba(0,0,0,.55)}" +
+        ".dx-fk .dx-keycap{right:6px;top:4px}.dx-tap .dx-keycap{right:6px;top:6px}";
+      document.head.appendChild(st);
+      console.warn("dcx404-novo.css sem as regras da legenda (copia velha no cache?): usando as de teclado.js");
     },
     /** Texto da barra do Learn (por cima do render do core, que nao conhece o teclado). */
     barText(bar) {
