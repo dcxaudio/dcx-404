@@ -204,6 +204,9 @@ window.RJ = window.RJ || {};
       // alvo do efeito (face nova, manual p. 18-19): fxAll = todos (botao do efeito pisca); fxPads = varios
       // (pads guardados escolhidos com REMAIN + pads); null = so o current pad (o padrao)
       fxAll: false, fxPads: null,
+      // face nova (manual p. 19): Effect Limit ([CANCEL] + [MFX], "L.on"/"L.oF", de fabrica desligado) e Send/Return
+      // ([CANCEL] + [VINYL SIM], "S.on"/"S.oF", de fabrica ligado). O SP-404 volta a esses dois ao ligar; aqui ficam guardados
+      fxLimit: false, sendRet: true,
       pads: new Array(SLOTS).fill(null).map(newPad),
     };
   }
@@ -326,7 +329,9 @@ window.RJ = window.RJ || {};
         "in-source": ["Source", () => this.nextSource()],
         // face nova (so existem la): DEL, CANCEL (por ora so cancela o DEL) e TAP TEMPO / Effect Grab
         "del": ["Del", () => this.delPress()],
-        "cancel": ["Cancel", () => this.cancelPress()],
+        // CANCEL segurado + MFX = Effect Limit; + VINYL SIM = Send/Return (manual p. 19)
+        // o CANCEL desiste ao soltar (usado como modificador, nao desiste de nada: SAMPLE EDIT, MARK, preselecao ficam)
+        "cancel": ["Cancel", () => { this.cancelHeld = { used: false }; }, () => { const h = this.cancelHeld; this.cancelHeld = null; if (!h || !h.used) this.cancelPress(); }],
         "tap": ["Tap Tempo", () => this.tapDown(), () => this.tapUp()],
         // REC / STEREO / REMAIN (Fase 2b): sampling da entrada (manual p. 14, 23-25, 28)
         "rec": ["Rec", () => this.recPress()],
@@ -561,7 +566,9 @@ window.RJ = window.RJ || {};
       if (!def || !def.make || (def.worklet && !this.worklet)) return null;
       fx = def.make(this.g.ctx, { nf: this.nf });   // a face nova pode ter outra tabela (Delay t32-t1, balance)
       fx.def = def;
-      this.st.params[id].forEach((v, i) => fx.set(i, v));
+      if (fx.sendRet) fx.sendRet(this.srOn());
+      if (fx.limit) fx.limit(this.limOn());
+      this.st.params[id].forEach((v, i) => this.fxSet(fx, i, v));
       if (fx.bpm) fx.bpm(this.st.bpm);
       if (fx.keep) { this.slot(b).attach(fx); fx.output.connect(this.g.sink); }
       this.fxi[b][id] = fx;
@@ -616,6 +623,8 @@ window.RJ = window.RJ || {};
       st.fxAll = d.fxAll === true;
       st.fxPads = !st.fxAll && Array.isArray(d.fxPads) ? [...new Set(d.fxPads.filter(s => Number.isInteger(s) && s >= 0 && s < SLOTS))] : null;
       if (st.fxPads && !st.fxPads.length) st.fxPads = null;   // lista vazia salva (versao antiga) = current pad
+      // estado/disquete sem os campos: Limit desligado e Send/Return ligado (o som de antes)
+      st.fxLimit = d.fxLimit === true; st.sendRet = d.sendRet !== false;
       this.markOp = null; this.remainHeld = null; this.preset = [null, null, null];
       st.lofiBits = clamp(Math.round(+d.lofiBits) || RJ.D4_LOFI.bits, RJ.D4_LOFI.minBits, RJ.D4_LOFI.maxBits);
       st.lofiDown = clamp(Math.round(+d.lofiDown) || RJ.D4_LOFI.down, 1, RJ.D4_LOFI.maxDown);
@@ -653,6 +662,7 @@ window.RJ = window.RJ || {};
           time: x.time === "ptn" ? "ptn" : time > 0 ? clamp(time, BPM_MIN, BPM_MAX) : null };
       });
       this.st = st;
+      this.reapplyFx();   // disquete/estado novo com o motor ligado: os efeitos ja criados seguem o Limit, o Send/Return e os valores dele
     }
 
     serialize() { return JSON.stringify(this.st); }
@@ -1006,6 +1016,8 @@ window.RJ = window.RJ || {};
       if (this.setup) this.toggleSetup(false);
       const b = this.st.bus;
       if (name === "mfx" && (this.shift || this.shiftKey)) { this.shiftUsed(); this.startMfxPick(); return; }
+      // face nova: [CANCEL] segurado + [MFX] / [VINYL SIM] = Effect Limit / Send/Return (manual p. 19); o efeito nao liga
+      if (this.nf && this.cancelHeld && (name === "mfx" || name === "vinyl")) { this.toggleFxMode(name); return; }
       // face nova: [MFX] + [VINYL SIM] + pad = MFX 13-24 (manual p. 18); na janela de 5 s o VINYL SIM troca 1-12 / 13-24
       // a janela de 5 s so vale enquanto o MFX e o efeito do bus: outro botao de efeito a fecha
       if (this.nf && this.mfxPick && name !== "mfx" && !(name === "vinyl" && this.isMfx(this.st.fx[b]))) this.endMfxPick();
@@ -1132,7 +1144,7 @@ window.RJ = window.RJ || {};
           if (v == null) return;
           const i = this.pk(RJ.D4FX.byId(id), k);
           this.st.params[id][i] = v;
-          [1, 2].forEach(x => { const fx = this.fxi[x][id]; if (fx) fx.set(i, v); });
+          [1, 2].forEach(x => { const fx = this.fxi[x][id]; if (fx) this.fxSet(fx, i, v); });
         });
         this.preset = [null, null, null];
       }
@@ -1260,10 +1272,10 @@ window.RJ = window.RJ || {};
       if (!f) { this.flash("---", "fx"); return; }
       const pi = this.pk(f, k);
       this.st.params[f.id][pi] = v;
-      [1, 2].forEach(b => { const fx = this.fxi[b][f.id]; if (fx) fx.set(pi, v); });
+      [1, 2].forEach(b => { const fx = this.fxi[b][f.id]; if (fx) this.fxSet(fx, pi, v); });
       if (!this.nf) { this.flash(String(Math.round(v * 127)), "fx"); return; }
       // face nova: ao comecar a girar, o visor mostra o codigo do manual (CoF, rES, drV...) e depois o valor
-      const now = performance.now(), code = f.codes && f.codes[k], fmt = f.show && f.show[k];
+      const cm = this.ctrlMap(f), now = performance.now(), code = cm.codes && cm.codes[k], fmt = f.show && f.show[k];
       const val = fmt ? fmt(v, this.st.bpm) : String(Math.round(v * 127));
       const fresh = this.codeK !== k || this.codeFx !== f.id || now - this.codeAt > 1200;
       this.codeAt = now;
@@ -1280,7 +1292,44 @@ window.RJ = window.RJ || {};
     }
     /** O parametro guardado que o Ctrl k move. Na face nova alguns efeitos seguem a ordem do manual (nfK):
      *  Lo-Fi rAt/bit/FLt, Vinyl CMP/noS/FLu, Delay t32-t1; o estado guarda por parametro, entao as duas faces leem o mesmo. */
-    pk(f, k) { return this.nf && f && f.nfK ? f.nfK[k] : k; }
+    pk(f, k) { const K = this.ctrlMap(f).K; return K ? K[k] : k; }
+    /** Effect Limit e Send/Return valem so na face nova (a estavel e o Studio seguem como sempre). */
+    limOn() { return this.nf && this.st.fxLimit; }
+    srOn() { return !this.nf || this.st.sendRet; }
+    /** O mapa dos Ctrl do efeito f agora: K (Ctrl -> parametro guardado; null = o mesmo numero), codes e caps.
+     *  Face nova: Send/Return desligado (Flanger/Phaser: srK) e Effect Limit ligado (Comp: limK) trocam o mapa. */
+    ctrlMap(f) {
+      if (!f) return { K: null, codes: null, caps: null };
+      if (this.nf && !this.srOn() && f.srK) return { K: f.srK, codes: f.srCodes, caps: f.srCaps };
+      if (this.limOn() && f.limK) return { K: f.limK, codes: f.limCodes, caps: f.limCaps };
+      return { K: this.nf && f.nfK ? f.nfK : null, codes: f.codes, caps: f.caps };
+    }
+    /** Manda o parametro i ao efeito; com o Effect Limit ligado os marcados (def.lim) andam numa faixa menor
+     *  ([ancora, fracao]) ou param num teto (numero: os LEV). */
+    fxSet(fx, i, v) {
+      const L = this.limOn() && fx.def && fx.def.lim && fx.def.lim[i];
+      fx.set(i, !L ? v : typeof L === "number" ? Math.min(v, L) : L[0] + (v - L[0]) * L[1]);
+    }
+    /** Manda Limit, Send/Return e os parametros guardados a todos os efeitos ja criados (troca de modo ou estado novo). */
+    reapplyFx() {
+      [1, 2].forEach(b => Object.values((this.fxi && this.fxi[b]) || {}).forEach(fx => {
+        if (fx.sendRet) fx.sendRet(this.srOn());
+        if (fx.limit) fx.limit(this.limOn());
+        const p = fx.def && this.st.params[fx.def.id];
+        if (p) p.forEach((v, i) => this.fxSet(fx, i, v));
+      }));
+    }
+    /** [CANCEL] + [MFX] (Limit) ou [CANCEL] + [VINYL SIM] (Send/Return): troca, mostra "L.on"/"L.oF" ou "S.on"/"S.oF"
+     *  e manda o mapa novo a todos os efeitos ja criados. */
+    toggleFxMode(name) {
+      if (this.cancelHeld) this.cancelHeld.used = true;
+      if (name === "mfx") this.st.fxLimit = !this.st.fxLimit; else this.st.sendRet = !this.st.sendRet;
+      this.reapplyFx();
+      this.codeFx = null;   // o proximo giro mostra o codigo do mapa novo
+      this.flash(name === "mfx" ? (this.st.fxLimit ? "L.on" : "L.oF") : (this.st.sendRet ? "S.on" : "S.oF"), "fx", 1500);
+      this.renderCaps();
+      this.dirty();
+    }
     /** [MFX] segurado ou a janela de 5 s aberta (face nova): o CTRL 3 escolhe o numero. */
     mfxChoosing() {
       if (!this.nf || this.setup || this.remainHeld || this.sed || this.lofiPage()) return false;   // REMAIN (C-3), SAMPLE EDIT e LO-FI vem antes
@@ -2226,7 +2275,7 @@ window.RJ = window.RJ || {};
     renderCaps() {
       if (!this.root) return;
       const f = this.curFx();
-      let caps = this.lofiPage() ? ["Lo Bits", "Lo Rate", "–"] : this.sendPage() ? ["Snd 2000", "Snd 950", "–"] : this.setup ? ["BPM", "Roll", "Pad Lvl"] : f ? f.caps : ["–", "–", "–"];
+      let caps = this.lofiPage() ? ["Lo Bits", "Lo Rate", "–"] : this.sendPage() ? ["Snd 2000", "Snd 950", "–"] : this.setup ? ["BPM", "Roll", "Pad Lvl"] : f ? this.ctrlMap(f).caps : ["–", "–", "–"];
       if (this.sed && !this.setup) caps = this.sed.mode === "se" ? ["Start", "End", "Level"] : ["Time", "BPM", caps[2]];
       if (this.smp) caps = [caps[0], caps[1], "Level"];
       $$("[data-cap]", this.root).forEach((el, k) => { el.textContent = caps[k]; });
