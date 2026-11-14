@@ -770,7 +770,11 @@ window.RJ = window.RJ || {};
       try {
         const ab = await file.arrayBuffer();
         b = await new Promise((res, rej) => ctx.decodeAudioData(ab, res, rej));
-      } catch (e) { console.warn(e); this.flash("Err", "pad"); return; }
+      } catch (e) {
+        console.warn(e); this.flash("Err", "pad");
+        if (this.onLoadNote) this.onLoadNote("Não consegui ler este arquivo: formato não suportado neste navegador (use WAV, MP3 ou M4A).");
+        return;
+      }
       // o pad esta sendo gravado (REC ou Resample): o arquivo nao entra (senao a gravacao some ou apaga o arquivo)
       if (this.recBusy(i, false)) { this.flash("rEC", "pad", 800); return; }
       if (b.numberOfChannels > 2) {
@@ -946,9 +950,22 @@ window.RJ = window.RJ || {};
       this.st.cur = i;
       this.flash("Lod", "pad");
       const inp = this.el.file;
+      // iOS/Safari so abre o seletor se input.click() rodar dentro de um gesto confiavel (touchend/click);
+      // o pad dispara no pointerdown, que la nao vale. No toque (ou sem ativacao do usuario) espera o
+      // touchend/click/pointerup do mesmo toque; com mouse e Shift (ativo) abre na hora.
       const ua = navigator.userActivation;
-      if (ua && !ua.isActive) window.addEventListener("pointerup", () => inp.click(), { once: true });
-      else inp.click();
+      const touch = !!(window.matchMedia && window.matchMedia("(pointer: coarse)").matches);
+      if (touch || (ua && !ua.isActive)) {
+        let done = false, tm = 0;
+        const evs = ["touchend", "click", "pointerup"];
+        const open = () => {
+          if (done) return; done = true; clearTimeout(tm);
+          evs.forEach(n => window.removeEventListener(n, open, true));
+          try { inp.click(); } catch (e) { console.warn(e); }
+        };
+        evs.forEach(n => window.addEventListener(n, open, true));
+        tm = setTimeout(() => { done = true; evs.forEach(n => window.removeEventListener(n, open, true)); }, 3000);
+      } else inp.click();
     }
 
     /** Gate, Loop e Reverse valem para o pad escolhido (o ultimo tocado). */
