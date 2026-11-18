@@ -4,7 +4,7 @@
  *   aceita: o disquete salvo pelo Studio (dcx-disk, machine "dcx404", arquivo *dcx-404.json),
  *   o disquete "cru" ({ state, pads }) e o projeto .zip do Studio (so le o dcx-404.json de dentro).
  *   Arquivo de outra maquina, zip sem o 404 ou arquivo que nao e disquete: erro com mensagem clara.
- * RJ.d4Open.apply(d404, data, ctx) -> { pads, banks }  troca estado e samples do 404 da pagina.
+ * RJ.d4Open.apply(d404, data, ctx) -> Promise<{ pads, banks, unsaved }>  troca estado e samples do 404 da pagina.
  * RJ.d4Open.build(d404)            -> { blob, name, ... } o inverso: o disquete da pagina (60 pads, A1-E12)
  *   no mesmo envelope dcx-disk que o parse le. O Studio (16 pads) abre os 16 primeiros (A1-A12, B1-B4)
  *   e o estado; B5-E12 ficam de fora la.
@@ -126,7 +126,7 @@
   }
 
   /** Troca o 404 da pagina pelo disquete (o mesmo que o A.dcx404.set do Studio, com a conversao 16 -> 12 x 5). */
-  function apply(d404, data, ctx) {
+  async function apply(d404, data, ctx) {
     const S = RJ.D404.SLOTS, P = RJ.D404.PADS;
     const st = Object.assign({}, data.state);
     if (st.format === undefined) st.format = "dcx404";   // estado antigo sem o campo: o disquete ja diz que e do 404
@@ -141,7 +141,7 @@
     if (d404.delMode) d404.delMode = null;
     d404.useState(st);
     let pads = 0, bad = 0;
-    const banks = new Set();
+    const banks = new Set(), saves = [];
     for (let i = 0; i < S; i++) {
       const x = Array.isArray(data.pads) ? data.pads[i] : null;
       let b = null;
@@ -155,13 +155,16 @@
       // o nome vem do estado; disquete antigo sem nomes no estado: o do sample (como a migracao, que le o pad guardado)
       const nm = b && !d404.st.pads[i].name && x && x.name ? String(x.name).slice(0, 40) : null;
       d404.setBuffer(i, b, nm, false);
-      d404.saveSample(i);
+      saves.push(d404.saveSample(i));
       if (b) { pads++; banks.add("ABCDE"[Math.floor(i / P)]); }
     }
     const extra = Array.isArray(data.pads) ? data.pads.slice(S).filter(Boolean).length : 0;
-    d404.applyAll(); d404.render(); d404.saveNow();
+    d404.applyAll(); d404.render(); saves.push(d404.saveNow());
     const pats = seq ? Object.keys(d404.st.seq && d404.st.seq.pats || {}).length : 0;
-    return { pads, banks: [...banks], bad, extra, pats, seq };
+    // so diz "aberto" depois de conferir as gravacoes no navegador: unsaved = quantas falharam
+    const ok = await Promise.all(saves.map(p => Promise.resolve(p).then(v => v !== false, () => false)));
+    const unsaved = ok.filter(v => !v).length;
+    return { pads, banks: [...banks], bad, extra, pats, seq, unsaved };
   }
 
   /** O aviso dos patterns do apply (vazio se nao ha o que dizer alem do numero). */

@@ -34,6 +34,14 @@
     const DEV = NEW + "dcx404/";
     const migrate = { [OLD + "state"]: DEV + "state", [OLD + "midimap"]: NEW + "midimap" };
     for (let i = 0; i < 16; i++) migrate[OLD + "pad/" + i] = DEV + "pad/" + i;
+    // core antigo (sem getStrict): o put nao percebe o abort da cota cheia e a promessa ficava pendurada
+    // para sempre (a migracao do boot esperava por ela e o 404 nao subia). Teto de seguranca de 8 s, que conta
+    // como falha. O core novo rejeita no abort e devolve false sozinho: nada muda la.
+    if (RJ.store && !RJ.store.getStrict && !RJ.store.putCap) {
+      const put0 = RJ.store.put;
+      RJ.store.put = (k, v) => Promise.race([put0(k, v), new Promise(r => setTimeout(() => r(false), 8000))]);
+      RJ.store.putCap = true;
+    }
     const host = RJ.Host.solo(root.dataset.hostPage || "dcx404-novo", { migrate });
     const d404 = new RJ.D404(host.view("dcx404"));
     host.add("dcx404", d404, { label: "DCX-404", receive: f => d404.receive(f) });
@@ -186,11 +194,13 @@
         await until(() => d404.loaded, 15000);    // o estado guardado ja entrou: o disquete vem por cima
         const hasPats = !!(d404.st.seq && d404.st.seq.pats && Object.keys(d404.st.seq.pats).length);
         if ((d404.buf.some(Boolean) || hasPats) && !(await ask("Abrir o " + from + " troca os pads e efeitos desta pagina (a versao estavel nao muda). Continuar?"))) { say("Nada mudou."); return; }
-        const r = RJ.d4Open.apply(d404, data, d404.engine.ensure());
+        say("Abrindo \"" + f.name + "\": guardando no navegador...");
+        const r = await RJ.d4Open.apply(d404, data, d404.engine.ensure());
         say((from === "projeto" ? "Projeto aberto (disquete do 404): " : "Disquete aberto: ") +
           (r.pads ? r.pads + (r.pads === 1 ? " pad" : " pads") + " em " + r.banks.join(", ") : "sem samples") + ", efeitos e volume." +
           (r.bad ? " " + r.bad + " sample(s) ilegivel(is) ficaram vazios." : "") +
-          (r.extra ? " " + r.extra + " pad(s) a mais que 60 ficaram de fora." : "") + RJ.d4Open.seqMsg(r));
+          (r.extra ? " " + r.extra + " pad(s) a mais que 60 ficaram de fora." : "") + RJ.d4Open.seqMsg(r) +
+          (r.unsaved ? " Não foi possível guardar no navegador (" + r.unsaved + (r.unsaved === 1 ? " gravação falhou" : " gravações falharam") + "): salve em arquivo (Salvar disquete) antes de fechar." : ""), !!r.unsaved);
       } catch (e) {
         console.warn(e);
         say(e.message || "Nao deu para abrir esse arquivo.", true);
@@ -292,6 +302,9 @@
     d404.el.file.addEventListener("change", () => { if (/escolha o arquivo/.test(upMsg.textContent)) upSay("", 0); });
     // arquivo subido com silencio no comeco: o motor corta e avisa so aqui ("Cortei 23 ms de silêncio do começo.")
     d404.onLoadNote = t => upSay(t, 5000);
+    // falha ao guardar no navegador (cota cheia...): avisa uma vez na mesma barra, sem apagar uma mensagem em curso
+    // (espera a barra ficar livre: "Toque no pad", o corte de silencio...)
+    d404.onStoreFail = t => { (function show() { if (upMsg.textContent) setTimeout(show, 1000); else upSay(t, 10000); })(); };
 
     // Painel Config (como o do DCX Studio, js/bar.js #cfg): o que nao e da maquina (MIDI Learn, Teclas,
     // disquete, ajuda, creditos). O botao da barra abre e fecha; Esc e tocar fora fecham.

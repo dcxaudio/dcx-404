@@ -693,8 +693,27 @@ window.RJ = window.RJ || {};
 
     saveNow() {
       clearTimeout(this.saveTimer);
-      if (!this.loaded) return;
-      try { this.host.store.put(STATE_KEY, this.serialize()); } catch (e) { console.warn(e); }
+      if (!this.loaded) return Promise.resolve(true);
+      return this.storePut(STATE_KEY, this.serialize());
+    }
+
+    /**
+     * Grava no navegador e devolve Promise<bool>. O put do core devolve false quando falha (e o core novo
+     * tambem rejeita/encerra no abort da cota cheia): os dois viram false. A primeira falha avisa uma vez
+     * (onStoreFail, a barra de baixo do solo; sem ele, onLoadNote) para o usuario salvar em arquivo.
+     */
+    storePut(key, val) {
+      let p;
+      try { p = this.host.store.put(key, val); } catch (e) { p = Promise.reject(e); }
+      return Promise.resolve(p).then(ok => ok !== false, e => { console.warn("Nao foi possivel guardar " + key, e); return false; })
+        .then(ok => { if (!ok) this.storeFailed(); return ok; });
+    }
+
+    storeFailed() {
+      if (this.storeWarned) return;
+      this.storeWarned = true;
+      const t = "Não foi possível guardar: salve em arquivo";
+      if (this.onStoreFail) this.onStoreFail(t); else if (this.onLoadNote) this.onLoadNote(t);
     }
 
     async loadSamples() {
@@ -714,12 +733,13 @@ window.RJ = window.RJ || {};
       }));
     }
 
+    /** Guarda o sample do pad i (ou apaga, sem buffer). Devolve Promise<bool> (false = nao guardou). */
     saveSample(i) {
       const b = this.buf[i];
-      if (!b) { this.host.store.put("pad/" + i, null); return; }
+      if (!b) return this.storePut("pad/" + i, null);
       const ch = [];
       for (let c = 0; c < b.numberOfChannels; c++) ch.push(RJ.dsp.floatToB64(b.getChannelData(c)));
-      this.host.store.put("pad/" + i, JSON.stringify({ v: 1, name: this.st.pads[i].name, rate: b.sampleRate, ch }));
+      return this.storePut("pad/" + i, JSON.stringify({ v: 1, name: this.st.pads[i].name, rate: b.sampleRate, ch }));
     }
 
     /* =========================================================== samples */
